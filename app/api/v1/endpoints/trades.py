@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 
 from app.services.mock_data import TRADES
+from app.services.repository import list_trades_from_db
 
 router = APIRouter()
 
@@ -14,11 +15,18 @@ def trades(
     cursor: str | None = Query(default=None),
 ) -> dict:
     del sort_by, cursor
-    rows = TRADES if service_key == "all" else [trade for trade in TRADES if trade["service_key"] == service_key]
-    reverse = sort_dir.lower() != "asc"
-    rows = sorted(rows, key=lambda row: row["open_time"], reverse=reverse)
+    rows = None
+    try:
+        rows = list_trades_from_db(service_key=service_key, limit=limit, sort_dir=sort_dir)
+    except Exception:
+        rows = None
+
+    if rows is None:
+        raw_rows = TRADES if service_key == "all" else [trade for trade in TRADES if trade["service_key"] == service_key]
+        reverse = sort_dir.lower() != "asc"
+        rows = sorted(raw_rows, key=lambda row: row["open_time"], reverse=reverse)[:limit]
+
     return {
-        "items": rows[:limit],
+        "items": rows,
         "next_cursor": None,
     }
-

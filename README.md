@@ -20,5 +20,6 @@ Open docs:
 ## Current status
 
 - API routes for session, overview, services, market, trades, logs, actions
-- Mock/in-memory responses aligned to `docs/live-trading-control-plane-spec.md`
+- `/services` and `/trades` can read from Postgres when `DATABASE_URL` is set
+- Other endpoints currently return mock data aligned to `docs/live-trading-control-plane-spec.md`
 - Project structure ready for Postgres + Alembic wiring

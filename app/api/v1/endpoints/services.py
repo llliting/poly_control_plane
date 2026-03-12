@@ -1,12 +1,20 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.mock_data import DECISIONS, RUNTIME_ROWS, get_service_or_none, get_services
+from app.services.repository import list_services_from_db
 
 router = APIRouter()
 
 
 @router.get("/services")
 def services() -> dict:
+    try:
+        rows = list_services_from_db()
+        if rows is not None:
+            return {"items": rows}
+    except Exception:
+        # Keep API available while DB wiring is in progress.
+        pass
     return {"items": get_services()}
 
 
@@ -36,4 +44,3 @@ def service_decisions(service_key: str, limit: int = Query(default=50, ge=1, le=
 def runtime_signals(service_key: str, limit: int = Query(default=50, ge=1, le=500)) -> dict:
     items = RUNTIME_ROWS.get(service_key, [])
     return {"items": items[:limit]}
-
