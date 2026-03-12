@@ -124,8 +124,20 @@ function normalizeSelections() {
   }
 }
 
+function normalizedApiOrigin() {
+  const raw = String(API_BASE || "").trim();
+  if (!raw) return window.location.origin;
+  try {
+    const u = new URL(raw);
+    return u.origin + u.pathname.replace(/\/$/, "");
+  } catch (_err) {
+    if (raw.startsWith("/")) return `${window.location.origin}${raw}`.replace(/\/$/, "");
+    return `${window.location.origin}/api/v1`;
+  }
+}
+
 async function apiGet(path, params = {}) {
-  const url = new URL(`${API_BASE}${path}`);
+  const url = new URL(`${normalizedApiOrigin()}${path}`);
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
   });
@@ -135,7 +147,7 @@ async function apiGet(path, params = {}) {
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${normalizedApiOrigin()}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
