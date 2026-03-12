@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     database_url: str | None = None
     database_echo: bool = False
     ingest_api_key: str | None = None
+    action_executor_enabled: bool = False
+    action_executor_runner_key: str | None = None
+    action_executor_poll_ms: int = 1000
+    action_executor_timeout_secs: int = 120
+    action_executor_max_output_chars: int = 4000
+    action_command_map_json: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

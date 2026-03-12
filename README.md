@@ -50,3 +50,25 @@ Performance note:
 
 - do not call ingest synchronously from the trading decision hot path
 - use a local buffer/queue in runner-agent and flush on interval or batch size
+
+## Start/Stop action executor
+
+The API can execute queued `start`/`stop` actions from `action_requests` via a local background worker.
+
+Set in `.env`:
+
+```bash
+ACTION_EXECUTOR_ENABLED=true
+ACTION_EXECUTOR_RUNNER_KEY=ec2-a
+ACTION_EXECUTOR_POLL_MS=1000
+ACTION_EXECUTOR_TIMEOUT_SECS=120
+ACTION_EXECUTOR_MAX_OUTPUT_CHARS=4000
+ACTION_COMMAND_MAP_JSON='{"btc_5m_main":{"start":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh start","stop":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh stop"}}'
+```
+
+Notes:
+
+- only requests for services whose `services.runner_key` matches `ACTION_EXECUTOR_RUNNER_KEY` are executed
+- action results are written to `action_results` and request status becomes `succeeded` / `failed`
+- service status is updated to `healthy` on successful `start`, `stopped` on successful `stop`
+- if `start` maps to build scripts, increase `ACTION_EXECUTOR_TIMEOUT_SECS` to cover build duration

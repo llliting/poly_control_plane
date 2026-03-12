@@ -449,6 +449,153 @@ def get_action_status(action_id: str) -> dict | None:
     }
 
 
+def claim_next_action_request(runner_key: str | None = None) -> dict | None:
+    engine = get_engine()
+    if engine is None:
+        return None
+
+    if runner_key:
+        query = text(
+            """
+            WITH next_action AS (
+              SELECT ar.id
+              FROM action_requests ar
+              JOIN services s ON s.service_key = ar.service_key
+              WHERE ar.status = 'queued'
+                AND s.runner_key = :runner_key
+              ORDER BY ar.requested_at ASC
+              FOR UPDATE SKIP LOCKED
+              LIMIT 1
+            )
+            UPDATE action_requests ar
+            SET status = 'running',
+                started_at = now()
+            FROM next_action na
+            WHERE ar.id = na.id
+            RETURNING ar.id, ar.service_key, ar.action_type, ar.requested_payload, ar.requested_at
+            """
+        )
+        params = {"runner_key": runner_key}
+    else:
+        query = text(
+            """
+            WITH next_action AS (
+              SELECT ar.id
+              FROM action_requests ar
+              WHERE ar.status = 'queued'
+              ORDER BY ar.requested_at ASC
+              FOR UPDATE SKIP LOCKED
+              LIMIT 1
+            )
+            UPDATE action_requests ar
+            SET status = 'running',
+                started_at = now()
+            FROM next_action na
+            WHERE ar.id = na.id
+            RETURNING ar.id, ar.service_key, ar.action_type, ar.requested_payload, ar.requested_at
+            """
+        )
+        params = {}
+
+    with engine.begin() as conn:
+        row = conn.execute(query, params).mappings().first()
+    if row is None:
+        return None
+    return {
+        "action_id": str(row["id"]),
+        "service_key": row["service_key"],
+        "action": row["action_type"],
+        "requested_payload": row["requested_payload"] or {},
+        "requested_at": _to_iso_z(row["requested_at"]),
+    }
+
+
+def complete_action_request(
+    action_id: str,
+    success: bool,
+    exit_code: int | None,
+    stdout_excerpt: str,
+    stderr_excerpt: str,
+    result_payload: dict | None = None,
+) -> None:
+    engine = get_engine()
+    if engine is None:
+        return
+
+    update_request = text(
+        """
+        UPDATE action_requests
+        SET status = :status,
+            finished_at = now()
+        WHERE id = :action_id
+        """
+    )
+    upsert_result = text(
+        """
+        INSERT INTO action_results (
+          action_request_id,
+          success,
+          exit_code,
+          stdout_excerpt,
+          stderr_excerpt,
+          result_payload,
+          created_at
+        )
+        VALUES (
+          :action_id,
+          :success,
+          :exit_code,
+          :stdout_excerpt,
+          :stderr_excerpt,
+          CAST(:result_payload AS jsonb),
+          now()
+        )
+        ON CONFLICT (action_request_id) DO UPDATE
+        SET success = EXCLUDED.success,
+            exit_code = EXCLUDED.exit_code,
+            stdout_excerpt = EXCLUDED.stdout_excerpt,
+            stderr_excerpt = EXCLUDED.stderr_excerpt,
+            result_payload = EXCLUDED.result_payload,
+            created_at = now()
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            update_request,
+            {
+                "action_id": action_id,
+                "status": "succeeded" if success else "failed",
+            },
+        )
+        conn.execute(
+            upsert_result,
+            {
+                "action_id": action_id,
+                "success": success,
+                "exit_code": exit_code,
+                "stdout_excerpt": stdout_excerpt,
+                "stderr_excerpt": stderr_excerpt,
+                "result_payload": json.dumps(result_payload or {}),
+            },
+        )
+
+
+def update_service_status(service_key: str, status: str) -> None:
+    engine = get_engine()
+    if engine is None:
+        return
+
+    query = text(
+        """
+        UPDATE services
+        SET status = :status
+        WHERE service_key = :service_key
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(query, {"service_key": service_key, "status": status})
+
+
 def insert_runtime_snapshot(payload: dict) -> dict | None:
     engine = get_engine()
     if engine is None:
