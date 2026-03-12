@@ -396,10 +396,12 @@ function renderOverview() {
 function renderServiceControls() {
   const s = getService();
   const ctl = state.serviceControlsByKey[s.name] || {};
+  const buildBtn = document.getElementById("service-build-btn");
   const startBtn = document.getElementById("service-start-btn");
   const stopBtn = document.getElementById("service-stop-btn");
   const runState = document.getElementById("service-run-state");
-  if (!startBtn || !stopBtn || !runState) return;
+  if (!buildBtn || !startBtn || !stopBtn || !runState) return;
+  buildBtn.disabled = false;
   startBtn.disabled = !Boolean(ctl.can_start);
   stopBtn.disabled = !Boolean(ctl.can_stop);
   runState.className = `chip ${s.status === "healthy" ? "ok" : s.status === "degraded" ? "warn" : "bad"}`;
@@ -785,9 +787,25 @@ function wireNav() {
 }
 
 function wireServiceActions() {
+  const buildBtn = document.getElementById("service-build-btn");
   const startBtn = document.getElementById("service-start-btn");
   const stopBtn = document.getElementById("service-stop-btn");
-  if (!startBtn || !stopBtn) return;
+  if (!buildBtn || !startBtn || !stopBtn) return;
+
+  buildBtn.onclick = async () => {
+    const s = getService();
+    if (!s) return;
+    try {
+      await apiPost(`/services/${s.name}/actions`, { action: "build" });
+      await refreshServices();
+      await refreshOverviewData();
+      await refreshServiceDetailData();
+      if (state.selectedLogService === "all" || state.selectedLogService === s.name) await refreshLogs();
+      renderAll();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   startBtn.onclick = async () => {
     const s = getService();

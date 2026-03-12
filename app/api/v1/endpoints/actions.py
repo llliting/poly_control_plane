@@ -6,7 +6,7 @@ from app.services.repository import create_action_request, get_action_status, li
 
 router = APIRouter()
 
-ALLOWED_ACTIONS = {"start", "stop"}
+ALLOWED_ACTIONS = {"start", "stop", "build"}
 
 
 class ActionRequest(BaseModel):

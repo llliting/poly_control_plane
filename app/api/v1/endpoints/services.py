@@ -41,7 +41,7 @@ def service_detail(service_key: str) -> dict:
         "controls": {
             "can_start": service["status"] == "stopped",
             "can_stop": service["status"] in {"healthy", "degraded"},
-            "allowed_actions": ["start", "stop", "restart", "redeploy"],
+            "allowed_actions": ["start", "stop", "build", "restart", "redeploy"],
         },
     }
 

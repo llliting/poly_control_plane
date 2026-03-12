@@ -37,7 +37,7 @@ def _parse_command_map() -> dict[str, dict[str, str]]:
         if not isinstance(service_key, str) or not isinstance(commands, dict):
             continue
         row: dict[str, str] = {}
-        for action in ("start", "stop"):
+        for action in ("start", "stop", "build"):
             value = commands.get(action)
             if isinstance(value, str) and value.strip():
                 row[action] = value.strip()
