@@ -186,6 +186,7 @@ def list_decisions_from_db(service_key: str, limit: int = 50) -> list[dict] | No
           streak_hits,
           streak_target,
           traded,
+          market_price,
           no_trade_reason
         FROM decision_records
         WHERE service_key = :service_key
@@ -210,6 +211,7 @@ def list_decisions_from_db(service_key: str, limit: int = 50) -> list[dict] | No
                 "streak_hits": int(row["streak_hits"] or 0),
                 "streak_target": int(row["streak_target"] or 0),
                 "traded": bool(row["traded"]),
+                "market_price": float(row["market_price"] or 0) if row["market_price"] is not None else None,
                 "no_trade_reason": row["no_trade_reason"],
             }
         )
@@ -285,6 +287,7 @@ def list_trades_from_db(
               side,
               model_probability,
               entry_price,
+              market_price,
               amount_usdc,
               result,
               pnl_usdc,
@@ -306,6 +309,7 @@ def list_trades_from_db(
               side,
               model_probability,
               entry_price,
+              market_price,
               amount_usdc,
               result,
               pnl_usdc,
@@ -335,6 +339,7 @@ def list_trades_from_db(
                 "side": row["side"],
                 "model_probability": float(row["model_probability"] or 0),
                 "entry_price": float(row["entry_price"] or 0),
+                "market_price": float(row["market_price"] or 0) if row["market_price"] is not None else None,
                 "amount_usdc": amount,
                 "result": row["result"],
                 "pnl_usdc": pnl,
@@ -558,6 +563,7 @@ def upsert_decision(payload: dict) -> dict | None:
           streak_hits,
           streak_target,
           traded,
+          market_price,
           no_trade_reason
         )
         VALUES (
@@ -572,6 +578,7 @@ def upsert_decision(payload: dict) -> dict | None:
           :streak_hits,
           :streak_target,
           :traded,
+          :market_price,
           :no_trade_reason
         )
         """
@@ -587,6 +594,7 @@ def upsert_decision(payload: dict) -> dict | None:
         "streak_hits": payload["streak_hits"],
         "streak_target": payload["streak_target"],
         "traded": payload["traded"],
+        "market_price": payload.get("market_price"),
         "no_trade_reason": payload.get("no_trade_reason"),
     }
     with engine.begin() as conn:
@@ -626,6 +634,7 @@ def upsert_trade(payload: dict) -> dict | None:
           side,
           model_probability,
           entry_price,
+          market_price,
           amount_usdc,
           result,
           pnl_usdc,
@@ -639,6 +648,7 @@ def upsert_trade(payload: dict) -> dict | None:
           :side,
           :model_probability,
           :entry_price,
+          :market_price,
           :amount_usdc,
           :result,
           :pnl_usdc,
@@ -653,6 +663,7 @@ def upsert_trade(payload: dict) -> dict | None:
         "side": payload["side"],
         "model_probability": payload["model_probability"],
         "entry_price": payload["entry_price"],
+        "market_price": payload.get("market_price"),
         "amount_usdc": payload["amount_usdc"],
         "result": payload["result"],
         "pnl_usdc": payload["pnl_usdc"],
