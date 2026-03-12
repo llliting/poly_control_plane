@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Trading Control - Monitoring MVP</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-glow bg-glow-a"></div>
+    <div class="bg-glow bg-glow-b"></div>
+
+    <header class="topbar">
+      <div>
+        <div class="brand">TRADING CONTROL</div>
+        <div class="subtitle">Monitoring MVP / Cloudflare Access / Multi-Runner</div>
+      </div>
+      <div class="top-actions">
+        <div class="pill">Environment: production</div>
+        <div class="pill">Operator: llliting@</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <button class="nav-btn active" data-page="overview">Overview</button>
+        <button class="nav-btn" data-page="services">Service Detail</button>
+        <button class="nav-btn" data-page="monitor">Market Monitor</button>
+        <button class="nav-btn" data-page="trades">Trades</button>
+        <button class="nav-btn" data-page="logs">Logs</button>
+      </aside>
+
+      <section class="content">
+        <section class="page active" id="page-overview">
+          <div class="cards">
+            <article class="card stat">
+              <div class="label">Runners Online</div>
+              <div class="value" id="stat-runners">4 / 5</div>
+            </article>
+            <article class="card stat">
+              <div class="label">Services Healthy</div>
+              <div class="value" id="stat-services">6 / 7</div>
+            </article>
+            <article class="card stat">
+              <div class="label">PnL Today</div>
+              <div class="value pos" id="stat-pnl">+$1,482.22</div>
+            </article>
+            <article class="card stat">
+              <div class="label">Open Alerts</div>
+              <div class="value warn" id="stat-alerts">3</div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="card-title">Service Snapshot</div>
+            <div class="table-wrap">
+              <table class="dense" id="overview-services">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>Runner</th>
+                    <th>Status</th>
+                    <th>Signal</th>
+                    <th>p_up</th>
+                    <th>Edge</th>
+                    <th>Trade</th>
+                    <th>Portfolio</th>
+                    <th>Position</th>
+                    <th>Cash</th>
+                    <th>Commit</th>
+                    <th>Heartbeat</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-title">Service Range Controls</div>
+            <div class="trades-controls">
+              <label class="selector-row" for="overview-service-filter">
+                <span class="selector-label">Services</span>
+                <div id="overview-service-filter" class="multi-dropdown"></div>
+              </label>
+              <label class="selector-row" for="overview-date-from">
+                <span class="selector-label">From</span>
+                <input id="overview-date-from" type="date" />
+              </label>
+              <label class="selector-row" for="overview-date-to">
+                <span class="selector-label">To</span>
+                <input id="overview-date-to" type="date" />
+              </label>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-title">PnL in Selected Range</div>
+            <div class="cards">
+              <article class="card stat">
+                <div class="label">Realized PnL</div>
+                <div class="value" id="range-pnl-realized">+$0.00</div>
+              </article>
+              <article class="card stat">
+                <div class="label">Wins / Losses</div>
+                <div class="value" id="range-pnl-wl">0 / 0</div>
+              </article>
+              <article class="card stat">
+                <div class="label">Trades</div>
+                <div class="value" id="range-pnl-count">0</div>
+              </article>
+              <article class="card stat">
+                <div class="label">Avg PnL / Trade</div>
+                <div class="value" id="range-pnl-avg">$0.00</div>
+              </article>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-title">Service Charts in Selected Range</div>
+            <div class="mini-grid mini-grid-two">
+              <div class="mini-card">
+                <div class="mini-label">Portfolio Curve</div>
+                <div id="overview-chart-portfolio" class="mini-chart"></div>
+              </div>
+              <div class="mini-card">
+                <div class="mini-label">Cumulative PnL Curve</div>
+                <div id="overview-chart-pnl" class="mini-chart"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-title">Incidents</div>
+            <div class="chips" id="incident-chips"></div>
+          </article>
+        </section>
+
+        <section class="page" id="page-services">
+          <article class="card">
+            <div class="card-title">Service Selector</div>
+            <label class="selector-row" for="service-select">
+              <span class="selector-label">Choose service</span>
+              <select id="service-select"></select>
+            </label>
+            <div class="service-actions">
+              <button id="service-start-btn" type="button" class="tiny-btn">Start</button>
+              <button id="service-stop-btn" type="button" class="tiny-btn">Stop</button>
+              <span id="service-run-state" class="chip">status: -</span>
+            </div>
+          </article>
+
+          <div class="split">
+            <article class="card">
+              <div class="card-title">Selected Service</div>
+              <div class="kv-grid" id="service-kv"></div>
+            </article>
+            <article class="card">
+              <div class="card-title">Health</div>
+              <div class="kv-grid" id="health-kv"></div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="card-title">Latest Decisions</div>
+            <div class="table-wrap">
+              <table class="dense" id="service-decisions">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Market</th>
+                    <th>Side</th>
+                    <th>p_up</th>
+                    <th>Threshold</th>
+                    <th>Edge</th>
+                    <th>Streak</th>
+                    <th>Traded</th>
+                    <th>No Trade Reason</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-title">Live Market and Runtime Signals</div>
+            <div class="table-wrap">
+              <table class="dense" id="service-live-data">
+                <thead>
+                  <tr>
+                    <th>Time (ET)</th>
+                    <th>Binance</th>
+                    <th>Chainlink</th>
+                    <th>PM Mid</th>
+                    <th>PM Bid</th>
+                    <th>PM Ask</th>
+                    <th>CL-Bin Spread</th>
+                    <th>Bucket Left</th>
+                    <th>Ingest Lag</th>
+                    <th>Signal Streak</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+
+        </section>
+
+        <section class="page" id="page-monitor">
+          <div class="cards">
+            <article class="card stat">
+              <div class="label">Binance BTCUSDT</div>
+              <div class="value mono" id="binance-price">93,422.12</div>
+            </article>
+            <article class="card stat">
+              <div class="label">Chainlink BTC/USD</div>
+              <div class="value mono" id="chainlink-price">93,417.88</div>
+            </article>
+            <article class="card stat">
+              <div class="label">Spread</div>
+              <div class="value mono" id="spread-price">4.24</div>
+            </article>
+            <article class="card stat">
+              <div class="label">Market Slug</div>
+              <div class="value mono compact" id="market-slug">btc-updown-5m-1772484300</div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="card-title">Price Tape (mock)</div>
+            <div class="table-wrap">
+              <table class="dense" id="price-tape">
+                <thead>
+                  <tr>
+                    <th>Time (ET)</th>
+                    <th>Symbol</th>
+                    <th>Binance</th>
+                    <th>Chainlink</th>
+                    <th>Spread</th>
+                    <th>Stale</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="page" id="page-trades">
+          <article class="card">
+            <div class="card-title">Trade Controls</div>
+            <div class="trades-controls">
+              <label class="selector-row" for="trades-service-filter">
+                <span class="selector-label">Filter by service</span>
+                <select id="trades-service-filter"></select>
+              </label>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-title">Trade Ledger</div>
+            <div class="table-wrap">
+              <table class="dense" id="trade-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="page" id="page-logs">
+          <article class="card">
+            <div class="card-title">Log Controls</div>
+            <label class="selector-row" for="logs-service-filter">
+              <span class="selector-label">Filter by service</span>
+              <select id="logs-service-filter"></select>
+            </label>
+          </article>
+          <article class="card">
+            <div class="card-title">Live Logs</div>
+            <div class="log-view" id="log-view"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
