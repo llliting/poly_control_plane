@@ -1,4 +1,4 @@
-const API_BASE = localStorage.getItem("liveTradingApiBase") || "http://127.0.0.1:8090/api/v1";
+const API_BASE = localStorage.getItem("liveTradingApiBase") || "/api/v1";
 const STORAGE_KEY = "liveTradingFrontendPrefsV1";
 const POLL_INTERVAL_MS = 5000;
 const ET_TIME_ZONE = "America/New_York";
