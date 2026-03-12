@@ -32,3 +32,21 @@ Open docs:
 ```bash
 PGPASSWORD='YOUR_DB_PASSWORD' psql -h 127.0.0.1 -U control_user -d control_plane -f sql/mvp_step2_tables.sql
 ```
+
+## Ingest endpoints (runner-agent to backend)
+
+Set `INGEST_API_KEY` in backend `.env`, then send header:
+
+- `X-Ingest-Key: <INGEST_API_KEY>`
+
+Routes:
+
+- `POST /api/v1/ingest/runtime`
+- `POST /api/v1/ingest/decision`
+- `POST /api/v1/ingest/trade`
+- `POST /api/v1/ingest/batch`
+
+Performance note:
+
+- do not call ingest synchronously from the trading decision hot path
+- use a local buffer/queue in runner-agent and flush on interval or batch size

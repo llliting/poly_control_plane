@@ -443,3 +443,225 @@ def get_action_status(action_id: str) -> dict | None:
         },
     }
 
+
+def insert_runtime_snapshot(payload: dict) -> dict | None:
+    engine = get_engine()
+    if engine is None:
+        return None
+
+    snapshot_id = str(uuid4())
+    query = text(
+        """
+        INSERT INTO service_runtime_snapshots (
+          id,
+          service_key,
+          captured_at,
+          status,
+          signal,
+          p_up,
+          edge,
+          traded,
+          portfolio_usdc,
+          position_usdc,
+          cash_usdc,
+          binance_price,
+          chainlink_price,
+          pm_mid,
+          pm_bid,
+          pm_ask,
+          cl_bin_spread,
+          bucket_seconds_left,
+          ingest_lag_ms,
+          streak_hits,
+          streak_target
+        )
+        VALUES (
+          :id,
+          :service_key,
+          CAST(:captured_at AS timestamptz),
+          :status,
+          :signal,
+          :p_up,
+          :edge,
+          :traded,
+          :portfolio_usdc,
+          :position_usdc,
+          :cash_usdc,
+          :binance_price,
+          :chainlink_price,
+          :pm_mid,
+          :pm_bid,
+          :pm_ask,
+          :cl_bin_spread,
+          :bucket_seconds_left,
+          :ingest_lag_ms,
+          :streak_hits,
+          :streak_target
+        )
+        """
+    )
+    params = {
+        "id": snapshot_id,
+        "service_key": payload["service_key"],
+        "captured_at": payload["captured_at"],
+        "status": payload.get("status", "healthy"),
+        "signal": payload.get("signal"),
+        "p_up": payload.get("p_up"),
+        "edge": payload.get("edge"),
+        "traded": payload.get("traded"),
+        "portfolio_usdc": payload.get("portfolio_usdc"),
+        "position_usdc": payload.get("position_usdc"),
+        "cash_usdc": payload.get("cash_usdc"),
+        "binance_price": payload.get("binance_price"),
+        "chainlink_price": payload.get("chainlink_price"),
+        "pm_mid": payload.get("pm_mid"),
+        "pm_bid": payload.get("pm_bid"),
+        "pm_ask": payload.get("pm_ask"),
+        "cl_bin_spread": payload.get("cl_bin_spread"),
+        "bucket_seconds_left": payload.get("bucket_seconds_left"),
+        "ingest_lag_ms": payload.get("ingest_lag_ms"),
+        "streak_hits": payload.get("streak_hits"),
+        "streak_target": payload.get("streak_target"),
+    }
+    with engine.begin() as conn:
+        conn.execute(query, params)
+    return {"snapshot_id": snapshot_id, "status": "inserted"}
+
+
+def upsert_decision(payload: dict) -> dict | None:
+    engine = get_engine()
+    if engine is None:
+        return None
+
+    select_query = text(
+        """
+        SELECT id
+        FROM decision_records
+        WHERE service_key = :service_key
+          AND market_slug = :market_slug
+          AND occurred_at = CAST(:occurred_at AS timestamptz)
+          AND side = :side
+        LIMIT 1
+        """
+    )
+    insert_query = text(
+        """
+        INSERT INTO decision_records (
+          id,
+          service_key,
+          occurred_at,
+          market_slug,
+          side,
+          p_up,
+          threshold,
+          edge,
+          streak_hits,
+          streak_target,
+          traded,
+          no_trade_reason
+        )
+        VALUES (
+          :id,
+          :service_key,
+          CAST(:occurred_at AS timestamptz),
+          :market_slug,
+          :side,
+          :p_up,
+          :threshold,
+          :edge,
+          :streak_hits,
+          :streak_target,
+          :traded,
+          :no_trade_reason
+        )
+        """
+    )
+    params = {
+        "service_key": payload["service_key"],
+        "occurred_at": payload["occurred_at"],
+        "market_slug": payload["market_slug"],
+        "side": payload["side"],
+        "p_up": payload["p_up"],
+        "threshold": payload["threshold"],
+        "edge": payload["edge"],
+        "streak_hits": payload["streak_hits"],
+        "streak_target": payload["streak_target"],
+        "traded": payload["traded"],
+        "no_trade_reason": payload.get("no_trade_reason"),
+    }
+    with engine.begin() as conn:
+        existing = conn.execute(select_query, params).mappings().first()
+        if existing is not None:
+            return {"decision_id": str(existing["id"]), "status": "exists"}
+        decision_id = str(uuid4())
+        conn.execute(insert_query, {"id": decision_id, **params})
+    return {"decision_id": decision_id, "status": "inserted"}
+
+
+def upsert_trade(payload: dict) -> dict | None:
+    engine = get_engine()
+    if engine is None:
+        return None
+
+    select_query = text(
+        """
+        SELECT id
+        FROM trades
+        WHERE service_key = :service_key
+          AND market_slug = :market_slug
+          AND open_time = CAST(:open_time AS timestamptz)
+          AND side = :side
+          AND amount_usdc = :amount_usdc
+          AND entry_price = :entry_price
+        LIMIT 1
+        """
+    )
+    insert_query = text(
+        """
+        INSERT INTO trades (
+          id,
+          service_key,
+          market_slug,
+          open_time,
+          side,
+          model_probability,
+          entry_price,
+          amount_usdc,
+          result,
+          pnl_usdc,
+          status
+        )
+        VALUES (
+          :id,
+          :service_key,
+          :market_slug,
+          CAST(:open_time AS timestamptz),
+          :side,
+          :model_probability,
+          :entry_price,
+          :amount_usdc,
+          :result,
+          :pnl_usdc,
+          :status
+        )
+        """
+    )
+    params = {
+        "service_key": payload["service_key"],
+        "market_slug": payload["market_slug"],
+        "open_time": payload["open_time"],
+        "side": payload["side"],
+        "model_probability": payload["model_probability"],
+        "entry_price": payload["entry_price"],
+        "amount_usdc": payload["amount_usdc"],
+        "result": payload["result"],
+        "pnl_usdc": payload["pnl_usdc"],
+        "status": payload.get("status", "settled"),
+    }
+    with engine.begin() as conn:
+        existing = conn.execute(select_query, params).mappings().first()
+        if existing is not None:
+            return {"trade_id": str(existing["id"]), "status": "exists"}
+        trade_id = str(uuid4())
+        conn.execute(insert_query, {"id": trade_id, **params})
+    return {"trade_id": trade_id, "status": "inserted"}
