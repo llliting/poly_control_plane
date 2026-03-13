@@ -348,6 +348,11 @@ function renderOverview() {
   pnlEl.textContent = `${pnl >= 0 ? "+" : ""}$${formatNumber(pnl)}`;
   pnlEl.className = `value ${pnl >= 0 ? "pos" : "warn"}`;
   document.getElementById("stat-alerts").textContent = String(stats.open_alerts || 0);
+  document.getElementById("stat-portfolio").textContent = `$${formatNumber(stats.portfolio_value_usdc || 0)}`;
+  document.getElementById("stat-cash").textContent = `$${formatNumber(stats.cash_usdc || 0)}`;
+  document.getElementById("stat-positions").textContent = `$${formatNumber(stats.positions_value_usdc || 0)}`;
+  const redeemable = Number(stats.redeemable_usdc ?? stats.claimable_usdc ?? 0);
+  document.getElementById("stat-redeemable").textContent = `$${formatNumber(redeemable)}`;
 
   const tbody = document.querySelector("#overview-services tbody");
   tbody.innerHTML = state.services

@@ -41,6 +41,7 @@ def overview(
                 data["stats"]["portfolio_value_usdc"] = round(current_value, 4)
                 data["stats"]["positions_value_usdc"] = round(wallet_summary["positions_value_usdc"], 4)
                 data["stats"]["cash_usdc"] = round(wallet_summary["cash_usdc"], 4)
+                data["stats"]["redeemable_usdc"] = round(wallet_summary["redeemable_usdc"], 4)
                 data["stats"]["open_positions"] = int(wallet_summary["open_position_count"])
                 data["stats"]["wallet_trade_activity_count"] = int(wallet_summary["trade_activity_count"])
             return data

@@ -77,12 +77,15 @@ def fetch_wallet_summary(wallet: str, from_date: str, to_date: str) -> dict | No
         positions_value = float((value_raw or {}).get("positionsValue") or 0.0) if isinstance(value_raw, dict) else 0.0
 
         open_position_count = 0
+        redeemable_value = 0.0
         realized_pnl = 0.0
         unrealized_pnl = 0.0
         for row in positions:
             size = float(row.get("size") or 0.0)
             if abs(size) > 0:
                 open_position_count += 1
+            if bool(row.get("redeemable")):
+                redeemable_value += float(row.get("currentValue") or 0.0)
             realized_pnl += float(row.get("realizedPnl") or 0.0)
             unrealized_pnl += float(row.get("curPnl") or 0.0)
 
@@ -92,6 +95,7 @@ def fetch_wallet_summary(wallet: str, from_date: str, to_date: str) -> dict | No
             "current_value_usdc": current_value,
             "cash_usdc": cash_value,
             "positions_value_usdc": positions_value,
+            "redeemable_usdc": redeemable_value,
             "open_position_count": open_position_count,
             "positions_realized_pnl_usdc": realized_pnl,
             "positions_unrealized_pnl_usdc": unrealized_pnl,
