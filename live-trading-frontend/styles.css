@@ -193,10 +193,26 @@ body {
 
 .table-wrap-fixed-20 {
   max-height: 30rem;
+  overflow-y: auto;
+}
+
+.table-wrap-fixed-20 thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 2;
 }
 
 .table-wrap-fixed-5 {
   max-height: 11rem;
+  overflow-y: auto;
+}
+
+.table-wrap-fixed-5 thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 2;
 }
 
 table.dense {

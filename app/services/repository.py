@@ -142,6 +142,10 @@ def get_overview_from_db(service_key: str, from_date: str, to_date: str) -> dict
             "services_total": len(services),
             "pnl_today_usdc": round(total_pnl, 4),
             "open_alerts": open_alerts,
+            "portfolio_value_usdc": 0.0,
+            "positions_value_usdc": 0.0,
+            "cash_usdc": 0.0,
+            "redeemable_usdc": 0.0,
         },
         "services": [
             {

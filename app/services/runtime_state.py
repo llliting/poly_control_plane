@@ -111,12 +111,14 @@ def overlay_service_detail(data: dict) -> dict:
 def runtime_overview_money(service_keys: list[str]) -> dict | None:
     rows = [get_latest_runtime_snapshot(key) for key in service_keys if key]
     rows = [row for row in rows if row and row.get("portfolio_usdc") is not None]
-    if len(rows) != 1:
+    if not rows:
         return None
 
-    row = rows[0]
+    portfolio = sum(float(row.get("portfolio_usdc") or 0.0) for row in rows)
+    positions = sum(float(row.get("position_usdc") or 0.0) for row in rows)
+    cash = sum(float(row.get("cash_usdc") or 0.0) for row in rows)
     return {
-        "portfolio_value_usdc": round(float(row.get("portfolio_usdc") or 0.0), 4),
-        "positions_value_usdc": round(float(row.get("position_usdc") or 0.0), 4),
-        "cash_usdc": round(float(row.get("cash_usdc") or 0.0), 4),
+        "portfolio_value_usdc": round(portfolio, 4),
+        "positions_value_usdc": round(positions, 4),
+        "cash_usdc": round(cash, 4),
     }

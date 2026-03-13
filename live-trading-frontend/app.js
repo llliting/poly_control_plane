@@ -60,6 +60,7 @@ const state = {
 };
 
 let scrollSaveTimer = null;
+let _renderingLogs = false;
 
 function formatNumber(value, decimals = 2) {
   return new Intl.NumberFormat("en-US", {
@@ -777,18 +778,18 @@ function renderTrades() {
 function renderLogs() {
   const logView = document.getElementById("log-view");
   if (!logView) return;
+  const wasAutoPinTop = state.logsAutoPinTop;
   const prevScrollTop = logView.scrollTop;
-  const prevScrollHeight = logView.scrollHeight;
+  _renderingLogs = true;
   logView.innerHTML = state.logs
     .map((line) => `<div class="line-${line.level}">${line.text}</div>`)
     .join("");
-  if (state.logsAutoPinTop) {
+  if (wasAutoPinTop) {
     logView.scrollTop = 0;
-    return;
+  } else {
+    logView.scrollTop = prevScrollTop;
   }
-  const nextScrollHeight = logView.scrollHeight;
-  const delta = Math.max(0, nextScrollHeight - prevScrollHeight);
-  logView.scrollTop = prevScrollTop + delta;
+  _renderingLogs = false;
 }
 
 function renderPriceMonitor() {
@@ -899,7 +900,7 @@ async function refreshServiceDetailData() {
     apiGet(`/services/${key}/runtime-signals`, { limit: 50 }),
     apiGet("/trades", {
       service_key: key,
-      limit: 5,
+      limit: 50,
       sort_by: "open_time",
       sort_dir: "desc",
     }),
@@ -922,7 +923,11 @@ async function refreshServiceDetailData() {
     traded: d.traded ? "yes" : "no",
     reason: d.no_trade_reason || "",
   }));
-  state.serviceTradesByService[key] = (trades.items || []).map(mapTradeRow);
+  let serviceTradeRows = (trades.items || []).map(mapTradeRow);
+  if (serviceTradeRows.length === 0) {
+    serviceTradeRows = state.trades.filter((t) => t.service === key);
+  }
+  state.serviceTradesByService[key] = serviceTradeRows;
   state.liveRowsByService[key] = (runtime.items || []).map((r) => ({
     ts: formatEtDateTime(r.ts),
     binance: Number(r.binance_price || 0),
@@ -1082,10 +1087,10 @@ function startPolling() {
 async function initialLoad() {
   await refreshServices();
   normalizeSelections();
+  await refreshTrades();
   await Promise.all([
     refreshOverviewData(),
     refreshServiceDetailData(),
-    refreshTrades(),
     refreshLogs(),
     refreshMarket(),
   ]);
@@ -1103,6 +1108,7 @@ async function init() {
     logView.addEventListener(
       "scroll",
       () => {
+        if (_renderingLogs) return;
         state.logsAutoPinTop = logView.scrollTop <= 8;
       },
       { passive: true },
