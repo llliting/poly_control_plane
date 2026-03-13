@@ -389,9 +389,9 @@ function renderOverview() {
   const portfolioCurve = data?.charts?.portfolio_curve || [];
   const pnlCurve = data?.charts?.cumulative_pnl_curve || [];
   const pVals = portfolioCurve.map((x) => Number(x.value_usdc || 0));
-  const pLabels = portfolioCurve.map((x) => x.ts || "");
+  const pLabels = portfolioCurve.map((x) => formatEtDateTime(x.ts));
   const cVals = pnlCurve.map((x) => Number(x.value_usdc || 0));
-  const cLabels = pnlCurve.map((x) => x.ts || "");
+  const cLabels = pnlCurve.map((x) => formatEtDateTime(x.ts));
   document.getElementById("overview-chart-portfolio").innerHTML = sparklineSvg(pVals, "#8ef0c3", {
     labels: pLabels,
     prefix: "$",
