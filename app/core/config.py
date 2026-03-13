@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     action_executor_timeout_secs: int = 120
     action_executor_max_output_chars: int = 4000
     action_command_map_json: str | None = None
+    polymarket_data_host: str = "https://data-api.polymarket.com"
+    polymarket_overview_wallet: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

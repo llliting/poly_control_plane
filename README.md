@@ -72,3 +72,19 @@ Notes:
 - action results are written to `action_results` and request status becomes `succeeded` / `failed`
 - service status is updated to `healthy` on successful `start`, `stopped` on successful `stop`
 - if `build` runs long compile scripts, increase `ACTION_EXECUTOR_TIMEOUT_SECS` to cover build duration
+
+## Overview wallet enrichment
+
+`GET /api/v1/overview` can enrich the dashboard with current Polymarket wallet value, positions value, cash, open-position count, and trade activity count.
+
+Set in `.env`:
+
+```bash
+POLYMARKET_DATA_HOST=https://data-api.polymarket.com
+POLYMARKET_OVERVIEW_WALLET=0xYOUR_WALLET
+```
+
+Implementation notes:
+
+- realized PnL and curves are still based on the local `trades` table
+- current wallet value / positions / activity are fetched from Polymarket Data API

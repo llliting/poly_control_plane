@@ -68,6 +68,116 @@ def list_services_from_db() -> list[dict] | None:
     return items
 
 
+def get_overview_from_db(service_key: str, from_date: str, to_date: str) -> dict | None:
+    engine = get_engine()
+    if engine is None:
+        return None
+
+    services = list_services_from_db()
+    if services is None:
+        return None
+
+    selected_services = services if service_key == "all" else [s for s in services if s["service_key"] == service_key]
+    if not selected_services and service_key != "all":
+        return None
+
+    if service_key == "all":
+        trade_query = text(
+            """
+            SELECT
+              open_time,
+              pnl_usdc,
+              result,
+              service_key
+            FROM trades
+            WHERE open_time >= CAST(:from_ts AS timestamptz)
+              AND open_time < CAST(:to_ts AS timestamptz) + interval '1 day'
+            ORDER BY open_time ASC
+            """
+        )
+        trade_params = {"from_ts": from_date, "to_ts": to_date}
+    else:
+        trade_query = text(
+            """
+            SELECT
+              open_time,
+              pnl_usdc,
+              result,
+              service_key
+            FROM trades
+            WHERE service_key = :service_key
+              AND open_time >= CAST(:from_ts AS timestamptz)
+              AND open_time < CAST(:to_ts AS timestamptz) + interval '1 day'
+            ORDER BY open_time ASC
+            """
+        )
+        trade_params = {"service_key": service_key, "from_ts": from_date, "to_ts": to_date}
+
+    with engine.connect() as conn:
+        trade_rows = conn.execute(trade_query, trade_params).mappings().all()
+
+    total_pnl = 0.0
+    wins = 0
+    losses = 0
+    cumulative_pnl_curve = [{"ts": f"{from_date}T00:00:00Z", "value_usdc": 0.0}]
+    for row in trade_rows:
+        pnl = float(row["pnl_usdc"] or 0.0)
+        total_pnl += pnl
+        if pnl > 0:
+            wins += 1
+        elif pnl < 0:
+            losses += 1
+        cumulative_pnl_curve.append({"ts": _to_iso_z(row["open_time"]), "value_usdc": round(total_pnl, 6)})
+
+    trade_count = wins + losses
+    avg_pnl = total_pnl / trade_count if trade_count else 0.0
+    services_healthy = sum(1 for s in services if s["status"] == "healthy")
+    open_alerts = sum(1 for s in services if s["status"] not in {"healthy", "stopped"})
+
+    return {
+        "stats": {
+            "runners_online": len({s["runner_key"] for s in services if s["status"] != "stopped"}),
+            "runners_total": len({s["runner_key"] for s in services}),
+            "services_healthy": services_healthy,
+            "services_total": len(services),
+            "pnl_today_usdc": round(total_pnl, 4),
+            "open_alerts": open_alerts,
+        },
+        "services": [
+            {
+                "service_key": s["service_key"],
+                "runner_key": s["runner_key"],
+                "status": s["status"],
+                "signal": s["signal"],
+                "p_up": s["p_up"],
+                "edge": s["edge"],
+                "traded": s["traded"],
+                "portfolio_usdc": s["portfolio_usdc"],
+                "position_usdc": s["position_usdc"],
+                "cash_usdc": s["cash_usdc"],
+                "git_commit": s["git_commit"],
+                "heartbeat_age_sec": s["heartbeat_age_sec"],
+            }
+            for s in selected_services
+        ],
+        "range_summary": {
+            "from": from_date,
+            "to": to_date,
+            "service_key": service_key,
+            "realized_pnl_usdc": round(total_pnl, 4),
+            "wins": wins,
+            "losses": losses,
+            "trade_count": trade_count,
+            "avg_pnl_usdc": round(avg_pnl, 6),
+        },
+        "charts": {
+            "portfolio_curve": [],
+            "cumulative_pnl_curve": cumulative_pnl_curve,
+        },
+        "incidents": [],
+    }
+
+
 def get_service_detail_from_db(service_key: str) -> dict | None:
     engine = get_engine()
     if engine is None:
