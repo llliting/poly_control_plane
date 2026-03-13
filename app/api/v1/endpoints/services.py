@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.mock_data import DECISIONS, RUNTIME_ROWS, get_service_or_none, get_services
+from app.services.action_executor import probe_service_state
 from app.services.repository import (
     get_service_detail_from_db,
     list_decisions_from_db,
@@ -11,12 +12,42 @@ from app.services.repository import (
 router = APIRouter()
 
 
+def _apply_probe_to_service_row(row: dict) -> dict:
+    probe = probe_service_state(service_key=row["service_key"], runner_key=row.get("runner_key"))
+    if not probe:
+        return row
+    out = dict(row)
+    out["status"] = probe["status"]
+    return out
+
+
+def _apply_probe_to_detail(data: dict) -> dict:
+    service = data["service"]
+    probe = probe_service_state(service_key=service["service_key"], runner_key=service.get("runner_key"))
+    if not probe:
+        return data
+
+    out = {
+        "service": dict(service),
+        "health": dict(data["health"]),
+        "controls": dict(data["controls"]),
+    }
+    out["service"]["status"] = probe["status"]
+    out["health"]["process_state"] = probe["process_state"]
+    out["health"]["ready"] = probe["process_state"] == "running"
+    out["controls"]["can_start"] = probe["can_start"]
+    out["controls"]["can_stop"] = probe["can_stop"]
+    if probe["build_available"] and "build" not in out["controls"].get("allowed_actions", []):
+        out["controls"]["allowed_actions"] = [*out["controls"].get("allowed_actions", []), "build"]
+    return out
+
+
 @router.get("/services")
 def services() -> dict:
     try:
         rows = list_services_from_db()
         if rows is not None:
-            return {"items": rows}
+            return {"items": [_apply_probe_to_service_row(row) for row in rows]}
     except Exception:
         # Keep API available while DB wiring is in progress.
         pass
@@ -28,7 +59,7 @@ def service_detail(service_key: str) -> dict:
     try:
         data = get_service_detail_from_db(service_key)
         if data is not None:
-            return data
+            return _apply_probe_to_detail(data)
     except Exception:
         pass
 

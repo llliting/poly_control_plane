@@ -37,7 +37,7 @@ def _parse_command_map() -> dict[str, dict[str, str]]:
         if not isinstance(service_key, str) or not isinstance(commands, dict):
             continue
         row: dict[str, str] = {}
-        for action in ("start", "stop", "build"):
+        for action in ("start", "stop", "build", "status"):
             value = commands.get(action)
             if isinstance(value, str) and value.strip():
                 row[action] = value.strip()
@@ -46,9 +46,71 @@ def _parse_command_map() -> dict[str, dict[str, str]]:
     return out
 
 
+def _runner_key() -> str:
+    return settings.action_executor_runner_key or socket.gethostname()
+
+
+def _status_command(commands: dict[str, str]) -> list[str] | None:
+    explicit = commands.get("status")
+    if explicit:
+        return shlex.split(explicit)
+
+    for candidate in (commands.get("start"), commands.get("stop"), commands.get("build")):
+        if not candidate:
+            continue
+        parts = shlex.split(candidate)
+        if parts and parts[-1] in {"start", "stop", "build", "restart"}:
+            parts[-1] = "status"
+            return parts
+    return None
+
+
+def probe_service_state(service_key: str, runner_key: str | None = None, timeout_s: float = 2.0) -> dict | None:
+    if runner_key and runner_key != _runner_key():
+        return None
+
+    commands = _parse_command_map().get(service_key)
+    if not commands:
+        return None
+
+    cmd = _status_command(commands)
+    if not cmd:
+        return None
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=max(timeout_s, 0.5),
+            check=False,
+        )
+    except Exception:
+        return None
+
+    output = f"{proc.stdout or ''}\n{proc.stderr or ''}".strip().lower()
+    if proc.returncode == 0 and "running" in output:
+        process_state = "running"
+        status = "healthy"
+    elif proc.returncode == 0 and "stopped" in output:
+        process_state = "stopped"
+        status = "stopped"
+    else:
+        process_state = "unknown"
+        status = "degraded"
+
+    return {
+        "process_state": process_state,
+        "status": status,
+        "can_start": process_state != "running",
+        "can_stop": process_state == "running",
+        "build_available": "build" in commands,
+    }
+
+
 class ActionExecutor:
     def __init__(self) -> None:
-        self._runner_key = settings.action_executor_runner_key or socket.gethostname()
+        self._runner_key = _runner_key()
         self._poll_s = max(settings.action_executor_poll_ms, 100) / 1000.0
         self._timeout_s = max(settings.action_executor_timeout_secs, 5)
         self._max_chars = max(settings.action_executor_max_output_chars, 256)
