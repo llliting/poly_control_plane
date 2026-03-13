@@ -23,17 +23,41 @@ def list_services_from_db() -> list[dict] | None:
     query = text(
         """
         SELECT
-          service_key,
-          display_name,
-          asset,
-          timeframe,
-          strategy_key,
-          runner_key,
-          status,
-          git_branch,
-          git_commit
-        FROM services
-        ORDER BY service_key ASC
+          s.service_key,
+          s.display_name,
+          s.asset,
+          s.timeframe,
+          s.strategy_key,
+          s.runner_key,
+          COALESCE(r.status, s.status) AS status,
+          s.git_branch,
+          s.git_commit,
+          r.signal,
+          r.p_up,
+          r.edge,
+          r.traded,
+          r.portfolio_usdc,
+          r.position_usdc,
+          r.cash_usdc,
+          EXTRACT(EPOCH FROM (now() - r.captured_at))::int AS heartbeat_age_sec
+        FROM services s
+        LEFT JOIN LATERAL (
+          SELECT
+            captured_at,
+            status,
+            signal,
+            p_up,
+            edge,
+            traded,
+            portfolio_usdc,
+            position_usdc,
+            cash_usdc
+          FROM service_runtime_snapshots
+          WHERE service_key = s.service_key
+          ORDER BY captured_at DESC
+          LIMIT 1
+        ) r ON TRUE
+        ORDER BY s.service_key ASC
         """
     )
     with engine.connect() as conn:
@@ -50,16 +74,16 @@ def list_services_from_db() -> list[dict] | None:
                 "strategy_key": row["strategy_key"],
                 "runner_key": row["runner_key"],
                 "status": row["status"],
-                "signal": "SKIP",
-                "p_up": 0.5,
-                "edge": 0.0,
-                "traded": False,
-                "portfolio_usdc": 0.0,
-                "position_usdc": 0.0,
-                "cash_usdc": 0.0,
+                "signal": row["signal"] or "SKIP",
+                "p_up": float(row["p_up"] or 0.5),
+                "edge": float(row["edge"] or 0.0),
+                "traded": bool(row["traded"]),
+                "portfolio_usdc": float(row["portfolio_usdc"] or 0.0),
+                "position_usdc": float(row["position_usdc"] or 0.0),
+                "cash_usdc": float(row["cash_usdc"] or 0.0),
                 "git_branch": row["git_branch"],
                 "git_commit": row["git_commit"],
-                "heartbeat_age_sec": 0,
+                "heartbeat_age_sec": max(int(row["heartbeat_age_sec"] or 0), 0),
                 "model_threshold": 0.85,
                 "edge_floor": 0.00,
                 "edge_ceiling": 0.40,
