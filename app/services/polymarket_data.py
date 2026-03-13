@@ -17,6 +17,13 @@ def _get_json(url: str, timeout: float = 4.0) -> dict | list:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _get_json_or_default(url: str, default: dict | list, timeout: float = 4.0) -> dict | list:
+    try:
+        return _get_json(url, timeout=timeout)
+    except Exception:
+        return default
+
+
 def _cached(key: tuple[str, str], loader) -> dict:
     now = time.time()
     cached = _CACHE.get(key)
@@ -67,8 +74,8 @@ def fetch_wallet_summary(wallet: str, from_date: str, to_date: str) -> dict | No
         activity_url = f"{base}/activity?{activity_params}"
 
         value_raw = _get_json(value_url)
-        positions_raw = _get_json(positions_url)
-        activity_raw = _get_json(activity_url)
+        positions_raw = _get_json_or_default(positions_url, [])
+        activity_raw = _get_json_or_default(activity_url, [])
 
         positions = positions_raw if isinstance(positions_raw, list) else []
         activity = activity_raw if isinstance(activity_raw, list) else []
