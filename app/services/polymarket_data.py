@@ -72,22 +72,33 @@ def fetch_wallet_summary(wallet: str, from_date: str, to_date: str) -> dict | No
 
         positions = positions_raw if isinstance(positions_raw, list) else []
         activity = activity_raw if isinstance(activity_raw, list) else []
-        current_value = float((value_raw or {}).get("value") or 0.0) if isinstance(value_raw, dict) else 0.0
-        cash_value = float((value_raw or {}).get("cash") or 0.0) if isinstance(value_raw, dict) else 0.0
-        positions_value = float((value_raw or {}).get("positionsValue") or 0.0) if isinstance(value_raw, dict) else 0.0
+        if isinstance(value_raw, list):
+            value_row = value_raw[0] if value_raw else {}
+        elif isinstance(value_raw, dict):
+            value_row = value_raw
+        else:
+            value_row = {}
+
+        current_value = float((value_row or {}).get("value") or 0.0)
 
         open_position_count = 0
         redeemable_value = 0.0
+        positions_value = 0.0
         realized_pnl = 0.0
         unrealized_pnl = 0.0
         for row in positions:
             size = float(row.get("size") or 0.0)
             if abs(size) > 0:
                 open_position_count += 1
+            positions_value += float(row.get("currentValue") or 0.0)
             if bool(row.get("redeemable")):
                 redeemable_value += float(row.get("currentValue") or 0.0)
             realized_pnl += float(row.get("realizedPnl") or 0.0)
             unrealized_pnl += float(row.get("curPnl") or 0.0)
+
+        cash_value = current_value - positions_value
+        if abs(cash_value) < 1e-9:
+            cash_value = 0.0
 
         activity_count = len(activity)
         return {
