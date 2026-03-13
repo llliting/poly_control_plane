@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.services.log_stream import append_log
 from app.services.repository import upsert_decision, upsert_trade
+from app.services.runtime_state import upsert_runtime_snapshot
 
 router = APIRouter()
 
@@ -86,9 +87,8 @@ class BatchIngest(BaseModel):
 
 @router.post("/ingest/runtime", dependencies=[Depends(verify_ingest_key)])
 def ingest_runtime(payload: RuntimeIngest) -> dict:
-    # Hybrid mode: runtime snapshots are not persisted to DB.
-    _ = payload
-    return {"ok": True, "status": "ignored"}
+    upsert_runtime_snapshot(payload.model_dump())
+    return {"ok": True, "status": "accepted"}
 
 
 @router.post("/ingest/decision", dependencies=[Depends(verify_ingest_key)])
@@ -118,12 +118,14 @@ def ingest_log(payload: LogIngest) -> dict:
 
 @router.post("/ingest/batch", dependencies=[Depends(verify_ingest_key)])
 def ingest_batch(payload: BatchIngest) -> dict:
+    runtime_results: list[dict] = []
     decision_results: list[dict] = []
     trade_results: list[dict] = []
     log_results: list[dict] = []
 
-    # Runtime items are intentionally ignored in hybrid mode.
-    _ = payload.runtime
+    for item in payload.runtime:
+        upsert_runtime_snapshot(item.model_dump())
+        runtime_results.append({"status": "accepted"})
 
     for item in payload.decisions:
         result = upsert_decision(item.model_dump())
@@ -145,12 +147,12 @@ def ingest_batch(payload: BatchIngest) -> dict:
     return {
         "ok": True,
         "counts": {
-            "runtime": 0,
+            "runtime": len(runtime_results),
             "decisions": len(decision_results),
             "trades": len(trade_results),
             "logs": len(log_results),
         },
-        "runtime": [],
+        "runtime": runtime_results,
         "decisions": decision_results,
         "trades": trade_results,
         "logs": log_results,

@@ -273,7 +273,7 @@ def get_service_detail_from_db(service_key: str) -> dict | None:
     controls = {
         "can_start": base_service["status"] == "stopped",
         "can_stop": base_service["status"] in {"healthy", "degraded"},
-        "allowed_actions": ["start", "stop", "build", "restart", "redeploy"],
+        "allowed_actions": ["start", "stop", "build", "redeem", "restart", "redeploy"],
     }
     return {"service": base_service, "health": health, "controls": controls}
 

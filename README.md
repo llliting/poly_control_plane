@@ -63,7 +63,7 @@ ACTION_EXECUTOR_RUNNER_KEY=ec2-a
 ACTION_EXECUTOR_POLL_MS=1000
 ACTION_EXECUTOR_TIMEOUT_SECS=120
 ACTION_EXECUTOR_MAX_OUTPUT_CHARS=4000
-ACTION_COMMAND_MAP_JSON='{"btc_5m_main":{"build":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh build","start":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh start","stop":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh stop"}}'
+ACTION_COMMAND_MAP_JSON='{"btc_5m_main":{"build":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh build","start":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh start","stop":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh stop","redeem":"/home/ubuntu/5min-journey/rust/md-gateway/scripts/control_plane_action.sh redeem"}}'
 ```
 
 Notes:

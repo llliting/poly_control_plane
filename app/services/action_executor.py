@@ -37,7 +37,7 @@ def _parse_command_map() -> dict[str, dict[str, str]]:
         if not isinstance(service_key, str) or not isinstance(commands, dict):
             continue
         row: dict[str, str] = {}
-        for action in ("start", "stop", "build", "status"):
+        for action in ("start", "stop", "build", "redeem", "status"):
             value = commands.get(action)
             if isinstance(value, str) and value.strip():
                 row[action] = value.strip()
@@ -204,6 +204,7 @@ class ActionExecutor:
                     "command": cmd,
                 },
             )
+            self._append_process_output_logs(service_key, action, proc.stdout or "", proc.stderr or "")
             if ok:
                 if action == "start":
                     update_service_status(service_key=service_key, status="healthy")
@@ -239,3 +240,21 @@ class ActionExecutor:
                 result_payload={"runner_key": self._runner_key, "command": cmd},
             )
             append_log({"ts": _iso_now(), "service_key": service_key, "level": "warn", "message": msg})
+
+    def _append_process_output_logs(self, service_key: str, action: str, stdout: str, stderr: str) -> None:
+        for level, prefix, text in (
+            ("info", "stdout", stdout),
+            ("warn", "stderr", stderr),
+        ):
+            for raw_line in text.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                append_log(
+                    {
+                        "ts": _iso_now(),
+                        "service_key": service_key,
+                        "level": level,
+                        "message": f"action {action} {prefix}: {line[: self._max_chars]}",
+                    }
+                )

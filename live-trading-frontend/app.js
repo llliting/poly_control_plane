@@ -29,6 +29,7 @@ const state = {
   services: [],
   incidents: [],
   decisionsByService: {},
+  serviceTradesByService: {},
   liveRowsByService: {},
   serviceHealthByKey: {},
   serviceControlsByKey: {},
@@ -45,6 +46,17 @@ const state = {
   marketTape: [],
   overviewData: null,
   pollTimer: null,
+  logsAutoPinTop: true,
+  overviewRedeemStatus: "redeem: idle",
+  overviewRedeemTone: "",
+  overviewRedeemBusy: false,
+  overviewRedeemActionId: null,
+  overviewRedeemPollTimer: null,
+  serviceActionStatus: "action: idle",
+  serviceActionTone: "",
+  serviceActionBusy: false,
+  serviceActionActionId: null,
+  serviceActionPollTimer: null,
 };
 
 let scrollSaveTimer = null;
@@ -154,6 +166,128 @@ async function apiPost(path, body) {
   });
   if (!res.ok) throw new Error(`POST ${path} failed (${res.status})`);
   return res.json();
+}
+
+function clearOverviewRedeemPollTimer() {
+  if (state.overviewRedeemPollTimer) {
+    clearTimeout(state.overviewRedeemPollTimer);
+    state.overviewRedeemPollTimer = null;
+  }
+}
+
+function clearServiceActionPollTimer() {
+  if (state.serviceActionPollTimer) {
+    clearTimeout(state.serviceActionPollTimer);
+    state.serviceActionPollTimer = null;
+  }
+}
+
+function updateOverviewRedeemStatus(text, tone = "") {
+  state.overviewRedeemStatus = text;
+  state.overviewRedeemTone = tone;
+  const redeemStatus = document.getElementById("overview-redeem-status");
+  if (redeemStatus) {
+    redeemStatus.textContent = text;
+    redeemStatus.className = `chip${tone ? ` ${tone}` : ""}`;
+  }
+  const redeemBtn = document.getElementById("overview-redeem-btn");
+  if (redeemBtn) {
+    const targetService =
+      state.selectedOverviewService !== "all"
+        ? state.selectedOverviewService
+        : state.selectedService || state.services[0]?.name || "";
+    redeemBtn.disabled = state.overviewRedeemBusy || !targetService;
+  }
+}
+
+function updateServiceActionStatus(text, tone = "") {
+  state.serviceActionStatus = text;
+  state.serviceActionTone = tone;
+  const status = document.getElementById("service-action-status");
+  if (status) {
+    status.textContent = text;
+    status.className = `chip${tone ? ` ${tone}` : ""}`;
+  }
+  renderServiceControls();
+}
+
+async function pollOverviewRedeemAction(actionId, serviceKey) {
+  try {
+    const result = await apiGet(`/actions/${actionId}`);
+    const status = String(result.status || "").toLowerCase();
+    if (status === "queued") {
+      updateOverviewRedeemStatus(`redeem: queued ${actionId}`, "warn");
+    } else if (status === "running") {
+      updateOverviewRedeemStatus(`redeem: running on ${serviceKey}`, "warn");
+    } else if (status === "succeeded") {
+      state.overviewRedeemBusy = false;
+      state.overviewRedeemActionId = null;
+      updateOverviewRedeemStatus(`redeem: succeeded`, "ok");
+      return;
+    } else if (status === "failed") {
+      state.overviewRedeemBusy = false;
+      state.overviewRedeemActionId = null;
+      updateOverviewRedeemStatus(`redeem: failed`, "bad");
+      return;
+    } else {
+      state.overviewRedeemBusy = false;
+      state.overviewRedeemActionId = null;
+      updateOverviewRedeemStatus(`redeem: ${status || "unknown"}`, "warn");
+      return;
+    }
+    state.overviewRedeemPollTimer = setTimeout(() => {
+      pollOverviewRedeemAction(actionId, serviceKey);
+    }, 2000);
+  } catch (err) {
+    console.error(err);
+    state.overviewRedeemBusy = false;
+    state.overviewRedeemActionId = null;
+    updateOverviewRedeemStatus(`redeem: queued, tracking unavailable`, "warn");
+  }
+}
+
+async function pollServiceAction(actionId, serviceKey, action) {
+  try {
+    const result = await apiGet(`/actions/${actionId}`);
+    const status = String(result.status || "").toLowerCase();
+    if (status === "queued") {
+      updateServiceActionStatus(`${action}: queued`, "warn");
+    } else if (status === "running") {
+      updateServiceActionStatus(`${action}: running`, "warn");
+    } else if (status === "succeeded") {
+      state.serviceActionBusy = false;
+      state.serviceActionActionId = null;
+      updateServiceActionStatus(`${action}: succeeded`, "ok");
+      await refreshServices();
+      await refreshOverviewData();
+      await refreshServiceDetailData();
+      if (state.selectedLogService === "all" || state.selectedLogService === serviceKey) {
+        await refreshLogs();
+      }
+      renderAll();
+      return;
+    } else if (status === "failed") {
+      state.serviceActionBusy = false;
+      state.serviceActionActionId = null;
+      updateServiceActionStatus(`${action}: failed`, "bad");
+      await refreshLogs();
+      renderLogs();
+      return;
+    } else {
+      state.serviceActionBusy = false;
+      state.serviceActionActionId = null;
+      updateServiceActionStatus(`${action}: ${status || "unknown"}`, "warn");
+      return;
+    }
+    state.serviceActionPollTimer = setTimeout(() => {
+      pollServiceAction(actionId, serviceKey, action);
+    }, 2000);
+  } catch (err) {
+    console.error(err);
+    state.serviceActionBusy = false;
+    state.serviceActionActionId = null;
+    updateServiceActionStatus(`${action}: queued, tracking unavailable`, "warn");
+  }
 }
 
 function statusPill(status) {
@@ -277,6 +411,8 @@ function renderOverviewControls() {
   const serviceFilter = document.getElementById("overview-service-filter");
   const fromInput = document.getElementById("overview-date-from");
   const toInput = document.getElementById("overview-date-to");
+  const redeemBtn = document.getElementById("overview-redeem-btn");
+  const redeemStatus = document.getElementById("overview-redeem-status");
   serviceFilter.innerHTML = `
     <select id="overview-service-select">
       <option value="all">All</option>
@@ -306,12 +442,45 @@ function renderOverviewControls() {
   };
   fromInput.onchange = onRangeChange;
   toInput.onchange = onRangeChange;
+
+  if (redeemBtn && redeemStatus) {
+    const targetService =
+      state.selectedOverviewService !== "all"
+        ? state.selectedOverviewService
+        : state.selectedService || state.services[0]?.name || "";
+    redeemBtn.disabled = state.overviewRedeemBusy || !targetService;
+    redeemStatus.textContent = state.overviewRedeemStatus;
+    redeemStatus.className = `chip${state.overviewRedeemTone ? ` ${state.overviewRedeemTone}` : ""}`;
+    redeemBtn.onclick = async () => {
+      if (!targetService) return;
+      clearOverviewRedeemPollTimer();
+      state.overviewRedeemBusy = true;
+      updateOverviewRedeemStatus(`redeem: queueing on ${targetService}`, "warn");
+      try {
+        const result = await apiPost(`/services/${targetService}/actions`, { action: "redeem" });
+        state.overviewRedeemActionId = result.action_id || null;
+        updateOverviewRedeemStatus(`redeem: queued ${result.action_id || ""}`.trim(), "warn");
+        if (state.overviewRedeemActionId) {
+          pollOverviewRedeemAction(state.overviewRedeemActionId, targetService);
+        } else {
+          state.overviewRedeemBusy = false;
+        }
+        await refreshLogs();
+        renderLogs();
+      } catch (err) {
+        console.error(err);
+        state.overviewRedeemBusy = false;
+        state.overviewRedeemActionId = null;
+        updateOverviewRedeemStatus(`redeem: failed`, "bad");
+      }
+    };
+  }
 }
 
 function renderTradeControls() {
   const serviceSelect = document.getElementById("trades-service-filter");
   serviceSelect.innerHTML = [
-    `<option value="all">all services</option>`,
+    `<option value="all">All</option>`,
     ...state.services.map((s) => `<option value="${s.name}">${s.name}</option>`),
   ].join("");
   serviceSelect.value = state.selectedTradeService;
@@ -417,12 +586,17 @@ function renderServiceControls() {
   const startBtn = document.getElementById("service-start-btn");
   const stopBtn = document.getElementById("service-stop-btn");
   const runState = document.getElementById("service-run-state");
+  const actionStatus = document.getElementById("service-action-status");
   if (!buildBtn || !startBtn || !stopBtn || !runState) return;
-  buildBtn.disabled = false;
-  startBtn.disabled = !Boolean(ctl.can_start);
-  stopBtn.disabled = !Boolean(ctl.can_stop);
+  buildBtn.disabled = state.serviceActionBusy;
+  startBtn.disabled = state.serviceActionBusy || !Boolean(ctl.can_start);
+  stopBtn.disabled = state.serviceActionBusy || !Boolean(ctl.can_stop);
   runState.className = `chip ${s.status === "healthy" ? "ok" : s.status === "degraded" ? "warn" : "bad"}`;
   runState.textContent = `status: ${s.status}`;
+  if (actionStatus) {
+    actionStatus.className = `chip${state.serviceActionTone ? ` ${state.serviceActionTone}` : ""}`;
+    actionStatus.textContent = state.serviceActionStatus;
+  }
 }
 
 function renderServiceDetail() {
@@ -478,6 +652,20 @@ function renderServiceDetail() {
     `,
     )
     .join("");
+
+  const serviceTrades = state.serviceTradesByService[s.name] || [];
+  const tradeBody = document.querySelector("#service-trades tbody");
+  if (tradeBody) {
+    tradeBody.innerHTML = serviceTrades
+      .map(
+        (t) => `
+        <tr>
+          ${TRADE_COLUMNS.map((c) => tradeCell(t, c.key)).join("")}
+        </tr>
+      `,
+      )
+      .join("");
+  }
 
   const rows = state.liveRowsByService[s.name] || [];
   const tbody = document.querySelector("#service-live-data tbody");
@@ -588,10 +776,19 @@ function renderTrades() {
 
 function renderLogs() {
   const logView = document.getElementById("log-view");
+  if (!logView) return;
+  const prevScrollTop = logView.scrollTop;
+  const prevScrollHeight = logView.scrollHeight;
   logView.innerHTML = state.logs
     .map((line) => `<div class="line-${line.level}">${line.text}</div>`)
     .join("");
-  logView.scrollTop = logView.scrollHeight;
+  if (state.logsAutoPinTop) {
+    logView.scrollTop = 0;
+    return;
+  }
+  const nextScrollHeight = logView.scrollHeight;
+  const delta = Math.max(0, nextScrollHeight - prevScrollHeight);
+  logView.scrollTop = prevScrollTop + delta;
 }
 
 function renderPriceMonitor() {
@@ -696,10 +893,16 @@ async function refreshOverviewData() {
 
 async function refreshServiceDetailData() {
   const key = state.selectedService;
-  const [detail, decisions, runtime] = await Promise.all([
+  const [detail, decisions, runtime, trades] = await Promise.all([
     apiGet(`/services/${key}`),
     apiGet(`/services/${key}/decisions`, { limit: 50 }),
     apiGet(`/services/${key}/runtime-signals`, { limit: 50 }),
+    apiGet("/trades", {
+      service_key: key,
+      limit: 5,
+      sort_by: "open_time",
+      sort_dir: "desc",
+    }),
   ]);
 
   const s = asUiService(detail.service);
@@ -719,6 +922,7 @@ async function refreshServiceDetailData() {
     traded: d.traded ? "yes" : "no",
     reason: d.no_trade_reason || "",
   }));
+  state.serviceTradesByService[key] = (trades.items || []).map(mapTradeRow);
   state.liveRowsByService[key] = (runtime.items || []).map((r) => ({
     ts: formatEtDateTime(r.ts),
     binance: Number(r.binance_price || 0),
@@ -740,7 +944,11 @@ async function refreshTrades() {
     sort_by: "open_time",
     sort_dir: "desc",
   });
-  state.trades = (data.items || []).map((t) => ({
+  state.trades = (data.items || []).map(mapTradeRow);
+}
+
+function mapTradeRow(t) {
+  return {
     time: formatEtDateTime(t.open_time),
     timeEpoch: Date.parse(t.open_time) || 0,
     service: t.service_key,
@@ -752,7 +960,7 @@ async function refreshTrades() {
     result: t.result,
     pnl: `${Number(t.pnl_usdc || 0) >= 0 ? "+" : ""}${Number(t.pnl_usdc || 0).toFixed(2)}`,
     status: t.status,
-  }));
+  };
 }
 
 async function refreshLogs() {
@@ -809,50 +1017,33 @@ function wireServiceActions() {
   const stopBtn = document.getElementById("service-stop-btn");
   if (!buildBtn || !startBtn || !stopBtn) return;
 
-  buildBtn.onclick = async () => {
+  const runServiceAction = async (action) => {
     const s = getService();
     if (!s) return;
+    clearServiceActionPollTimer();
+    state.serviceActionBusy = true;
+    updateServiceActionStatus(`${action}: queueing`, "warn");
     try {
-      await apiPost(`/services/${s.name}/actions`, { action: "build" });
-      await refreshServices();
-      await refreshOverviewData();
-      await refreshServiceDetailData();
-      if (state.selectedLogService === "all" || state.selectedLogService === s.name) await refreshLogs();
-      renderAll();
+      const result = await apiPost(`/services/${s.name}/actions`, { action });
+      state.serviceActionActionId = result.action_id || null;
+      updateServiceActionStatus(`${action}: queued`, "warn");
+      if (state.serviceActionActionId) {
+        pollServiceAction(state.serviceActionActionId, s.name, action);
+      } else {
+        state.serviceActionBusy = false;
+        updateServiceActionStatus(`${action}: queued`, "warn");
+      }
     } catch (err) {
       console.error(err);
+      state.serviceActionBusy = false;
+      state.serviceActionActionId = null;
+      updateServiceActionStatus(`${action}: failed`, "bad");
     }
   };
 
-  startBtn.onclick = async () => {
-    const s = getService();
-    if (!s) return;
-    try {
-      await apiPost(`/services/${s.name}/actions`, { action: "start" });
-      await refreshServices();
-      await refreshOverviewData();
-      await refreshServiceDetailData();
-      if (state.selectedLogService === "all" || state.selectedLogService === s.name) await refreshLogs();
-      renderAll();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  stopBtn.onclick = async () => {
-    const s = getService();
-    if (!s) return;
-    try {
-      await apiPost(`/services/${s.name}/actions`, { action: "stop" });
-      await refreshServices();
-      await refreshOverviewData();
-      await refreshServiceDetailData();
-      if (state.selectedLogService === "all" || state.selectedLogService === s.name) await refreshLogs();
-      renderAll();
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  buildBtn.onclick = async () => runServiceAction("build");
+  startBtn.onclick = async () => runServiceAction("start");
+  stopBtn.onclick = async () => runServiceAction("stop");
 }
 
 function renderAll() {
@@ -907,6 +1098,16 @@ async function init() {
   window.addEventListener("scroll", scheduleScrollSave, { passive: true });
   const content = document.querySelector(".content");
   if (content) content.addEventListener("scroll", scheduleScrollSave, { passive: true });
+  const logView = document.getElementById("log-view");
+  if (logView) {
+    logView.addEventListener(
+      "scroll",
+      () => {
+        state.logsAutoPinTop = logView.scrollTop <= 8;
+      },
+      { passive: true },
+    );
+  }
   window.addEventListener("beforeunload", () => {
     capturePageScroll();
     savePrefs();
