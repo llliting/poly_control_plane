@@ -271,7 +271,7 @@ def _poller_loop() -> None:
     base = settings.polymarket_data_host.rstrip("/")
     if not wallet:
         print("[polymarket-poller] no POLYMARKET_OVERVIEW_WALLET set, stopping", flush=True)
-    logger.warning("polymarket poller: no POLYMARKET_OVERVIEW_WALLET set, stopping")
+        logger.warning("polymarket poller: no POLYMARKET_OVERVIEW_WALLET set, stopping")
         return
 
     print(f"[polymarket-poller] started: wallet={wallet} interval={_POLL_INTERVAL_SECS:.0f}s", flush=True)
