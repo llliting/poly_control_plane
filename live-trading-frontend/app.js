@@ -12,6 +12,19 @@ const PM_TRADE_COLUMNS = [
   { key: "amount_usdc", label: "Amt USDC" },
 ];
 
+const PM_POSITION_COLUMNS = [
+  { key: "title", label: "Market" },
+  { key: "outcome", label: "Outcome" },
+  { key: "status", label: "Status" },
+  { key: "size", label: "Size" },
+  { key: "avg_price", label: "Avg Price" },
+  { key: "initial_value", label: "Cost" },
+  { key: "current_value", label: "Value" },
+  { key: "realized_pnl", label: "Realized PnL" },
+  { key: "unrealized_pnl", label: "Unrealized PnL" },
+  { key: "pnl_pct", label: "PnL %" },
+];
+
 const TRADE_COLUMNS = [
   { key: "time", label: "Time" },
   { key: "service", label: "Service" },
@@ -49,6 +62,9 @@ const state = {
   pmTradeSlugFilter: "",
   pmTradeSideFilter: "",
   pmTradeOutcomeFilter: "",
+  pmPositions: [],
+  pmPositionSort: { key: "current_value", dir: "desc" },
+  pmPositionStatusFilter: "all",
   openPositions: [],
   logs: [],
   marketSummary: {
@@ -333,6 +349,8 @@ function savePrefs() {
     pmTradeSlugFilter: state.pmTradeSlugFilter,
     pmTradeSideFilter: state.pmTradeSideFilter,
     pmTradeOutcomeFilter: state.pmTradeOutcomeFilter,
+    pmPositionSort: state.pmPositionSort,
+    pmPositionStatusFilter: state.pmPositionStatusFilter,
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -393,6 +411,16 @@ function restorePrefs() {
     if (typeof parsed.pmTradeSlugFilter === "string") state.pmTradeSlugFilter = parsed.pmTradeSlugFilter;
     if (typeof parsed.pmTradeSideFilter === "string") state.pmTradeSideFilter = parsed.pmTradeSideFilter;
     if (typeof parsed.pmTradeOutcomeFilter === "string") state.pmTradeOutcomeFilter = parsed.pmTradeOutcomeFilter;
+    if (
+      parsed.pmPositionSort &&
+      typeof parsed.pmPositionSort === "object" &&
+      typeof parsed.pmPositionSort.key === "string" &&
+      (parsed.pmPositionSort.dir === "asc" || parsed.pmPositionSort.dir === "desc") &&
+      PM_POSITION_COLUMNS.some((c) => c.key === parsed.pmPositionSort.key)
+    ) {
+      state.pmPositionSort = { key: parsed.pmPositionSort.key, dir: parsed.pmPositionSort.dir };
+    }
+    if (typeof parsed.pmPositionStatusFilter === "string") state.pmPositionStatusFilter = parsed.pmPositionStatusFilter;
   } catch (_err) {
     // Ignore malformed persisted data.
   }
@@ -924,6 +952,120 @@ function wirePmTradeControls() {
   }
 }
 
+function getPmPositionSortValue(pos, key) {
+  if (key === "title") return pos.title || "";
+  if (key === "outcome") return pos.outcome || "";
+  if (key === "status") return pos.status || "";
+  if (key === "pnl_pct") {
+    const init = Number(pos.initial_value || 0);
+    const pnl = Number(pos.realized_pnl || 0) + Number(pos.unrealized_pnl || 0);
+    return init > 0 ? pnl / init : 0;
+  }
+  return Number(pos[key] || 0);
+}
+
+function pmPositionCell(pos, key) {
+  if (key === "title") return `<td>${pos.title || "-"}</td>`;
+  if (key === "outcome") return `<td>${pos.outcome || "-"}</td>`;
+  if (key === "status") {
+    const cls = pos.status === "open" ? "pos" : pos.status === "closed" ? "neg" : "";
+    return `<td class="${cls}">${pos.status || "-"}</td>`;
+  }
+  if (key === "size") return `<td>${Number(pos.size || 0).toFixed(2)}</td>`;
+  if (key === "avg_price") return `<td>${Number(pos.avg_price || 0).toFixed(4)}</td>`;
+  if (key === "initial_value") return `<td>$${formatNumber(pos.initial_value || 0)}</td>`;
+  if (key === "current_value") return `<td>$${formatNumber(pos.current_value || 0)}</td>`;
+  if (key === "realized_pnl") {
+    const v = Number(pos.realized_pnl || 0);
+    const cls = v > 0 ? "pos" : v < 0 ? "neg" : "";
+    const sign = v >= 0 ? "+" : "-";
+    return `<td class="${cls}">${sign}$${formatNumber(Math.abs(v))}</td>`;
+  }
+  if (key === "unrealized_pnl") {
+    const v = Number(pos.unrealized_pnl || 0);
+    const cls = v > 0 ? "pos" : v < 0 ? "neg" : "";
+    const sign = v >= 0 ? "+" : "-";
+    return `<td class="${cls}">${sign}$${formatNumber(Math.abs(v))}</td>`;
+  }
+  if (key === "pnl_pct") {
+    const init = Number(pos.initial_value || 0);
+    const pnl = Number(pos.realized_pnl || 0) + Number(pos.unrealized_pnl || 0);
+    const pct = init > 0 ? (pnl / init) * 100 : 0;
+    const cls = pct > 0 ? "pos" : pct < 0 ? "neg" : "";
+    return `<td class="${cls}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%</td>`;
+  }
+  return "<td>-</td>";
+}
+
+function renderPmPositions() {
+  const table = document.getElementById("pm-position-table");
+  if (!table) return;
+  const thead = table.querySelector("thead");
+  const tbody = table.querySelector("tbody");
+
+  thead.innerHTML = `<tr>${PM_POSITION_COLUMNS
+    .map((c) => {
+      const active = state.pmPositionSort.key === c.key;
+      const arrow = active ? (state.pmPositionSort.dir === "asc" ? "▲" : "▼") : "";
+      return `<th class="sortable ${active ? "active" : ""}" data-pm-pos-sort-key="${c.key}">${c.label} <span class="sort-arrow">${arrow}</span></th>`;
+    })
+    .join("")}</tr>`;
+
+  let filtered = [...state.pmPositions];
+  if (state.pmPositionStatusFilter && state.pmPositionStatusFilter !== "all") {
+    filtered = filtered.filter((p) => p.status === state.pmPositionStatusFilter);
+  }
+
+  const { key, dir } = state.pmPositionSort;
+  filtered.sort((a, b) => {
+    const va = getPmPositionSortValue(a, key);
+    const vb = getPmPositionSortValue(b, key);
+    const cmp = typeof va === "string" ? va.localeCompare(vb) : va - vb;
+    return dir === "asc" ? cmp : -cmp;
+  });
+
+  tbody.innerHTML = filtered
+    .map((p) => `<tr>${PM_POSITION_COLUMNS.map((c) => pmPositionCell(p, c.key)).join("")}</tr>`)
+    .join("");
+
+  thead.querySelectorAll("[data-pm-pos-sort-key]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const k = th.dataset.pmPosSortKey;
+      if (!k) return;
+      if (state.pmPositionSort.key === k) state.pmPositionSort.dir = state.pmPositionSort.dir === "asc" ? "desc" : "asc";
+      else {
+        state.pmPositionSort.key = k;
+        state.pmPositionSort.dir = "desc";
+      }
+      savePrefs();
+      renderPmPositions();
+    });
+  });
+}
+
+function wirePmPositionControls() {
+  const statusSelect = document.getElementById("pm-position-status-filter");
+  if (statusSelect) {
+    statusSelect.value = state.pmPositionStatusFilter;
+    statusSelect.onchange = () => {
+      state.pmPositionStatusFilter = statusSelect.value;
+      savePrefs();
+      renderPmPositions();
+    };
+  }
+}
+
+async function refreshPmPositions() {
+  try {
+    const resp = await fetch(`${BASE}/polymarket-positions?status=all&limit=500&sort_by=current_value&sort_dir=desc`);
+    const data = await resp.json();
+    state.pmPositions = data.items || [];
+    renderPmPositions();
+  } catch (err) {
+    console.error("refreshPmPositions failed", err);
+  }
+}
+
 function renderLogs() {
   const logView = document.getElementById("log-view");
   if (!logView) return;
@@ -1228,10 +1370,12 @@ function renderAll() {
   renderTradeControls();
   renderLogControls();
   wirePmTradeControls();
+  wirePmPositionControls();
   renderOverview();
   renderServiceDetail();
   renderTrades();
   renderPmTrades();
+  renderPmPositions();
   renderPriceMonitor();
   renderLogs();
 }
@@ -1243,7 +1387,10 @@ async function refreshActivePage() {
     await Promise.all([refreshMarket(), refreshServiceDetailData()]);
   }
   if (state.activePage === "trades") await refreshTrades();
-  if (state.activePage === "pm-trades") await refreshPmTrades();
+  if (state.activePage === "pm-trades") {
+    await refreshPmTrades();
+    await refreshPmPositions();
+  }
   if (state.activePage === "logs") await refreshLogs();
 }
 
@@ -1268,6 +1415,7 @@ async function initialLoad() {
     refreshOverviewData(),
     refreshServiceDetailData(),
     refreshPmTrades(),
+    refreshPmPositions(),
     refreshLogs(),
     refreshMarket(),
   ]);

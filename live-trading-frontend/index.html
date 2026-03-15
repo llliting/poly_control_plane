@@ -350,7 +350,28 @@
           </article>
 
           <article class="card">
-            <div class="card-title">Polymarket Trade History</div>
+            <div class="card-title">Positions</div>
+            <div class="trades-controls">
+              <label class="selector-row" for="pm-position-status-filter">
+                <span class="selector-label">Status</span>
+                <select id="pm-position-status-filter">
+                  <option value="all">All</option>
+                  <option value="open">Open</option>
+                  <option value="closed">Closed</option>
+                  <option value="redeemable">Redeemable</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table class="dense" id="pm-position-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-title">Trade History</div>
             <div class="table-wrap">
               <table class="dense" id="pm-trade-table">
                 <thead></thead>
