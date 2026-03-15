@@ -70,9 +70,10 @@ def _get_json(url: str, timeout: float = 8.0) -> dict | list:
 
 def _get_json_safe(url: str, default: dict | list | None = None, timeout: float = 8.0) -> dict | list:
     try:
-        return _get_json(url, timeout=timeout)
+        result = _get_json(url, timeout=timeout)
+        return result
     except Exception as exc:
-        logger.debug("polymarket poll failed: %s — %s", url, exc)
+        print(f"[polymarket-poller] HTTP error: {url} — {exc}", flush=True)
         return default if default is not None else []
 
 
@@ -169,6 +170,7 @@ def _poll_once(wallet: str, base: str) -> None:
     # 1. Wallet value
     value_url = f"{base}/value?user={urllib.parse.quote(wallet)}"
     value_raw = _get_json_safe(value_url, default={})
+    print(f"[polymarket-poller] value response: {value_raw}", flush=True)
 
     # 2. All positions
     positions_url = (
@@ -176,6 +178,7 @@ def _poll_once(wallet: str, base: str) -> None:
         "&limit=500&sizeThreshold=0"
     )
     positions_raw = _get_json_safe(positions_url, default=[])
+    print(f"[polymarket-poller] positions count: {len(positions_raw) if isinstance(positions_raw, list) else 'not-list'}", flush=True)
 
     # 3. Trade activity (all time, most recent 500)
     activity_url = (
@@ -183,6 +186,7 @@ def _poll_once(wallet: str, base: str) -> None:
         "&type=TRADE&limit=500"
     )
     activity_raw = _get_json_safe(activity_url, default=[])
+    print(f"[polymarket-poller] activity count: {len(activity_raw) if isinstance(activity_raw, list) else 'not-list'}", flush=True)
 
     # Parse value
     if isinstance(value_raw, list):
