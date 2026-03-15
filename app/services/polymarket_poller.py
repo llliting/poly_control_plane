@@ -62,8 +62,11 @@ def get_last_poll_at() -> float:
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
+_USER_AGENT = "Mozilla/5.0 (compatible; PolyControlPlane/1.0)"
+
+
 def _get_json(url: str, timeout: float = 8.0) -> dict | list:
-    req = urllib.request.Request(url)
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
