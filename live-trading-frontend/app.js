@@ -2,6 +2,16 @@ const API_BASE = localStorage.getItem("liveTradingApiBase") || "/api/v1";
 const STORAGE_KEY = "liveTradingFrontendPrefsV1";
 const POLL_INTERVAL_MS = 5000;
 const ET_TIME_ZONE = "America/New_York";
+const PM_TRADE_COLUMNS = [
+  { key: "timestamp", label: "Time" },
+  { key: "slug", label: "Market" },
+  { key: "outcome", label: "Outcome" },
+  { key: "side", label: "Side" },
+  { key: "price", label: "Price" },
+  { key: "size", label: "Size" },
+  { key: "amount_usdc", label: "Amt USDC" },
+];
+
 const TRADE_COLUMNS = [
   { key: "time", label: "Time" },
   { key: "service", label: "Service" },
@@ -34,6 +44,12 @@ const state = {
   serviceHealthByKey: {},
   serviceControlsByKey: {},
   trades: [],
+  pmTrades: [],
+  pmTradeSort: { key: "timestamp", dir: "desc" },
+  pmTradeSlugFilter: "",
+  pmTradeSideFilter: "",
+  pmTradeOutcomeFilter: "",
+  openPositions: [],
   logs: [],
   marketSummary: {
     asset: "BTC",
@@ -313,6 +329,10 @@ function savePrefs() {
     overviewDateFrom: state.overviewDateFrom,
     overviewDateTo: state.overviewDateTo,
     tradeSort: state.tradeSort,
+    pmTradeSort: state.pmTradeSort,
+    pmTradeSlugFilter: state.pmTradeSlugFilter,
+    pmTradeSideFilter: state.pmTradeSideFilter,
+    pmTradeOutcomeFilter: state.pmTradeOutcomeFilter,
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -329,12 +349,12 @@ function restorePrefs() {
     if (!parsed || typeof parsed !== "object") return;
 
     if (typeof parsed.activePage === "string") {
-      const validPages = ["overview", "services", "monitor", "trades", "logs"];
+      const validPages = ["overview", "services", "monitor", "trades", "pm-trades", "logs"];
       if (validPages.includes(parsed.activePage)) state.activePage = parsed.activePage;
     }
     if (parsed.pageScrollByPage && typeof parsed.pageScrollByPage === "object") {
       const next = {};
-      ["overview", "services", "monitor", "trades", "logs"].forEach((k) => {
+      ["overview", "services", "monitor", "trades", "pm-trades", "logs"].forEach((k) => {
         const entry = parsed.pageScrollByPage[k];
         if (!entry || typeof entry !== "object") return;
         const windowY = Number(entry.windowY);
@@ -361,6 +381,18 @@ function restorePrefs() {
     ) {
       state.tradeSort = { key: parsed.tradeSort.key, dir: parsed.tradeSort.dir };
     }
+    if (
+      parsed.pmTradeSort &&
+      typeof parsed.pmTradeSort === "object" &&
+      typeof parsed.pmTradeSort.key === "string" &&
+      (parsed.pmTradeSort.dir === "asc" || parsed.pmTradeSort.dir === "desc") &&
+      PM_TRADE_COLUMNS.some((c) => c.key === parsed.pmTradeSort.key)
+    ) {
+      state.pmTradeSort = { key: parsed.pmTradeSort.key, dir: parsed.pmTradeSort.dir };
+    }
+    if (typeof parsed.pmTradeSlugFilter === "string") state.pmTradeSlugFilter = parsed.pmTradeSlugFilter;
+    if (typeof parsed.pmTradeSideFilter === "string") state.pmTradeSideFilter = parsed.pmTradeSideFilter;
+    if (typeof parsed.pmTradeOutcomeFilter === "string") state.pmTradeOutcomeFilter = parsed.pmTradeOutcomeFilter;
   } catch (_err) {
     // Ignore malformed persisted data.
   }
@@ -546,6 +578,31 @@ function renderOverview() {
     )
     .join("");
 
+  // Open positions table
+  const openPosTbody = document.querySelector("#overview-open-positions tbody");
+  if (openPosTbody) {
+    const openPositions = state.openPositions || [];
+    if (openPositions.length === 0) {
+      openPosTbody.innerHTML = `<tr><td colspan="6" style="text-align:center;opacity:0.5">No open positions</td></tr>`;
+    } else {
+      openPosTbody.innerHTML = openPositions
+        .map((p) => {
+          const pnl = Number(p.unrealized_pnl || 0);
+          const pnlClass = pnl >= 0 ? "pos" : "warn";
+          return `
+          <tr>
+            <td>${p.title || p.slug || "-"}</td>
+            <td>${p.outcome || "-"}</td>
+            <td>${Number(p.size || 0).toFixed(2)}</td>
+            <td>${Number(p.avg_price || 0).toFixed(4)}</td>
+            <td>$${formatNumber(p.current_value || 0)}</td>
+            <td class="${pnlClass}">${pnl >= 0 ? "+" : ""}$${formatNumber(pnl)}</td>
+          </tr>`;
+        })
+        .join("");
+    }
+  }
+
   const chips = document.getElementById("incident-chips");
   chips.innerHTML = state.incidents
     .map((i) => `<div class="chip ${i.level}">${i.text}</div>`)
@@ -668,27 +725,6 @@ function renderServiceDetail() {
       .join("");
   }
 
-  const rows = state.liveRowsByService[s.name] || [];
-  const tbody = document.querySelector("#service-live-data tbody");
-  tbody.innerHTML = rows
-    .map(
-      (r) => `
-      <tr>
-        <td>${r.ts}</td>
-        <td>${Number(r.binance || 0).toFixed(2)}</td>
-        <td>${Number(r.chainlink || 0).toFixed(2)}</td>
-        <td>${Number(r.pmMid || 0).toFixed(3)}</td>
-        <td>${Number(r.pmBid || 0).toFixed(3)}</td>
-        <td>${Number(r.pmAsk || 0).toFixed(3)}</td>
-        <td>${Number(r.clBinSpread || 0).toFixed(2)}</td>
-        <td>${r.bucketLeft}s</td>
-        <td>${r.ingestLag}ms</td>
-        <td>${r.streak}</td>
-      </tr>
-    `,
-    )
-    .join("");
-
   renderServiceControls();
 }
 
@@ -775,6 +811,119 @@ function renderTrades() {
   });
 }
 
+function getPmTradeSortValue(trade, key) {
+  if (key === "timestamp") return trade.timestamp || "";
+  if (key === "price") return Number(trade.price || 0);
+  if (key === "size") return Number(trade.size || 0);
+  if (key === "amount_usdc") return Number(trade.amount_usdc || 0);
+  if (key === "slug") return trade.slug || "";
+  if (key === "outcome") return trade.outcome || "";
+  if (key === "side") return trade.side || "";
+  return "";
+}
+
+function pmTradeCell(trade, key) {
+  if (key === "timestamp") return `<td>${formatEtDateTime(trade.timestamp)}</td>`;
+  if (key === "slug") return `<td>${trade.slug || "-"}</td>`;
+  if (key === "outcome") return `<td>${trade.outcome || "-"}</td>`;
+  if (key === "side") return `<td>${trade.side || "-"}</td>`;
+  if (key === "price") return `<td>${Number(trade.price || 0).toFixed(4)}</td>`;
+  if (key === "size") return `<td>${Number(trade.size || 0).toFixed(2)}</td>`;
+  if (key === "amount_usdc") return `<td>$${formatNumber(trade.amount_usdc || 0)}</td>`;
+  return "<td>-</td>";
+}
+
+function renderPmTrades() {
+  const table = document.getElementById("pm-trade-table");
+  if (!table) return;
+  const thead = table.querySelector("thead");
+  const tbody = table.querySelector("tbody");
+
+  thead.innerHTML = `<tr>${PM_TRADE_COLUMNS
+    .map((c) => {
+      const active = state.pmTradeSort.key === c.key;
+      const arrow = active ? (state.pmTradeSort.dir === "asc" ? "▲" : "▼") : "";
+      return `<th class="sortable ${active ? "active" : ""}" data-pm-sort-key="${c.key}">${c.label} <span class="sort-arrow">${arrow}</span></th>`;
+    })
+    .join("")}</tr>`;
+
+  // Apply client-side filters
+  let filtered = [...state.pmTrades];
+  if (state.pmTradeSlugFilter) {
+    const q = state.pmTradeSlugFilter.toLowerCase();
+    filtered = filtered.filter((t) => (t.slug || "").toLowerCase().includes(q));
+  }
+  if (state.pmTradeSideFilter) {
+    filtered = filtered.filter((t) => t.side === state.pmTradeSideFilter);
+  }
+  if (state.pmTradeOutcomeFilter) {
+    const q = state.pmTradeOutcomeFilter.toLowerCase();
+    filtered = filtered.filter((t) => (t.outcome || "").toLowerCase().includes(q));
+  }
+
+  // Sort
+  const sorted = filtered.sort((a, b) => {
+    const av = getPmTradeSortValue(a, state.pmTradeSort.key);
+    const bv = getPmTradeSortValue(b, state.pmTradeSort.key);
+    let cmp = 0;
+    if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
+    else cmp = String(av).localeCompare(String(bv));
+    return state.pmTradeSort.dir === "asc" ? cmp : -cmp;
+  });
+
+  tbody.innerHTML = sorted
+    .map(
+      (t) => `<tr>${PM_TRADE_COLUMNS.map((c) => pmTradeCell(t, c.key)).join("")}</tr>`,
+    )
+    .join("");
+
+  // Wire sort headers
+  thead.querySelectorAll("[data-pm-sort-key]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.pmSortKey;
+      if (!key) return;
+      if (state.pmTradeSort.key === key) state.pmTradeSort.dir = state.pmTradeSort.dir === "asc" ? "desc" : "asc";
+      else {
+        state.pmTradeSort.key = key;
+        state.pmTradeSort.dir = "desc";
+      }
+      savePrefs();
+      renderPmTrades();
+    });
+  });
+}
+
+function wirePmTradeControls() {
+  const slugInput = document.getElementById("pm-trades-slug-filter");
+  const sideSelect = document.getElementById("pm-trades-side-filter");
+  const outcomeInput = document.getElementById("pm-trades-outcome-filter");
+
+  if (slugInput) {
+    slugInput.value = state.pmTradeSlugFilter;
+    slugInput.oninput = () => {
+      state.pmTradeSlugFilter = slugInput.value;
+      savePrefs();
+      renderPmTrades();
+    };
+  }
+  if (sideSelect) {
+    sideSelect.value = state.pmTradeSideFilter;
+    sideSelect.onchange = () => {
+      state.pmTradeSideFilter = sideSelect.value;
+      savePrefs();
+      renderPmTrades();
+    };
+  }
+  if (outcomeInput) {
+    outcomeInput.value = state.pmTradeOutcomeFilter;
+    outcomeInput.oninput = () => {
+      state.pmTradeOutcomeFilter = outcomeInput.value;
+      savePrefs();
+      renderPmTrades();
+    };
+  }
+}
+
 function renderLogs() {
   const logView = document.getElementById("log-view");
   if (!logView) return;
@@ -798,21 +947,29 @@ function renderPriceMonitor() {
   document.getElementById("spread-price").textContent = Number(state.marketSummary.spread || 0).toFixed(2);
   document.getElementById("market-slug").textContent = state.marketSummary.market_slug || "-";
 
-  const tbody = document.querySelector("#price-tape tbody");
-  tbody.innerHTML = state.marketTape
-    .map(
-      (r) => `
-      <tr>
-        <td>${formatEtTime(r.ts)}</td>
-        <td>${r.symbol}</td>
-        <td>${Number(r.binance_price || 0).toFixed(2)}</td>
-        <td>${Number(r.chainlink_price || 0).toFixed(2)}</td>
-        <td>${Number(r.spread || 0).toFixed(2)}</td>
-        <td>${r.stale ? "yes" : "no"}</td>
-      </tr>
-    `,
-    )
-    .join("");
+  const s = getService();
+  const rows = state.liveRowsByService[s?.name] || [];
+  const tbody = document.querySelector("#service-live-data tbody");
+  if (tbody) {
+    tbody.innerHTML = rows
+      .map(
+        (r) => `
+        <tr>
+          <td>${r.ts}</td>
+          <td>${Number(r.binance || 0).toFixed(2)}</td>
+          <td>${Number(r.chainlink || 0).toFixed(2)}</td>
+          <td>${Number(r.pmMid || 0).toFixed(3)}</td>
+          <td>${Number(r.pmBid || 0).toFixed(3)}</td>
+          <td>${Number(r.pmAsk || 0).toFixed(3)}</td>
+          <td>${Number(r.clBinSpread || 0).toFixed(2)}</td>
+          <td>${r.bucketLeft}s</td>
+          <td>${r.ingestLag}ms</td>
+          <td>${r.streak}</td>
+        </tr>
+      `,
+      )
+      .join("");
+  }
 }
 
 function formatTooltipValue(value, opts) {
@@ -886,6 +1043,7 @@ async function refreshOverviewData() {
     to: state.overviewDateTo,
   });
   state.overviewData = data;
+  state.openPositions = data.open_positions || [];
   state.incidents = (data.incidents || []).map((i) => ({
     level: i.severity === "error" ? "bad" : i.severity === "warn" ? "warn" : "ok",
     text: i.message,
@@ -950,6 +1108,15 @@ async function refreshTrades() {
     sort_dir: "desc",
   });
   state.trades = (data.items || []).map(mapTradeRow);
+}
+
+async function refreshPmTrades() {
+  const data = await apiGet("/polymarket-trades", {
+    limit: 500,
+    sort_by: "timestamp",
+    sort_dir: "desc",
+  });
+  state.pmTrades = data.items || [];
 }
 
 function mapTradeRow(t) {
@@ -1056,9 +1223,11 @@ function renderAll() {
   renderServiceSelector();
   renderTradeControls();
   renderLogControls();
+  wirePmTradeControls();
   renderOverview();
   renderServiceDetail();
   renderTrades();
+  renderPmTrades();
   renderPriceMonitor();
   renderLogs();
 }
@@ -1066,8 +1235,11 @@ function renderAll() {
 async function refreshActivePage() {
   if (state.activePage === "overview") await refreshOverviewData();
   if (state.activePage === "services") await refreshServiceDetailData();
-  if (state.activePage === "monitor") await refreshMarket();
+  if (state.activePage === "monitor") {
+    await Promise.all([refreshMarket(), refreshServiceDetailData()]);
+  }
   if (state.activePage === "trades") await refreshTrades();
+  if (state.activePage === "pm-trades") await refreshPmTrades();
   if (state.activePage === "logs") await refreshLogs();
 }
 
@@ -1091,6 +1263,7 @@ async function initialLoad() {
   await Promise.all([
     refreshOverviewData(),
     refreshServiceDetailData(),
+    refreshPmTrades(),
     refreshLogs(),
     refreshMarket(),
   ]);

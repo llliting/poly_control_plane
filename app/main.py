@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.services import polymarket_poller
 from app.services.action_executor import ActionExecutor
 
 _action_executor: ActionExecutor | None = None
@@ -16,9 +17,12 @@ async def lifespan(_app: FastAPI):
     if settings.action_executor_enabled:
         _action_executor = ActionExecutor()
         _action_executor.start()
+    if settings.polymarket_overview_wallet:
+        polymarket_poller.start()
     try:
         yield
     finally:
+        polymarket_poller.stop()
         if _action_executor is not None:
             _action_executor.stop()
             _action_executor = None

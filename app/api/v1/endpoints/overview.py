@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query
 
 from app.core.config import settings
 from app.services.polymarket_data import fetch_wallet_summary
+from app.services.polymarket_poller import get_open_positions, get_wallet_summary
 from app.services.repository import get_overview_from_db, list_services_from_db
 from app.services.runtime_state import overlay_service_row, runtime_overview_money
 
@@ -63,6 +64,7 @@ def _empty_overview(service_key: str, from_date: str, to_date: str) -> dict:
             "cumulative_pnl_curve": [{"ts": f"{from_date}T00:00:00Z", "value_usdc": 0.0}],
         },
         "incidents": [],
+        "open_positions": [],
     }
 
 
@@ -77,6 +79,7 @@ def overview(
         db_data = get_overview_from_db(service_key=service_key, from_date=from_date, to_date=to_date)
         if db_data is not None:
             data = db_data
+            data.setdefault("open_positions", [])
     except Exception:
         pass
 
@@ -84,11 +87,17 @@ def overview(
     runtime_money = runtime_overview_money(
         [str(row.get("service_key") or "").strip() for row in data.get("services", [])]
     )
-    wallet_summary = fetch_wallet_summary(
-        wallet=settings.polymarket_overview_wallet or "",
-        from_date=from_date,
-        to_date=to_date,
-    )
+
+    # Prefer poller data (always fresh), fall back to one-shot fetch
+    poller_summary = get_wallet_summary()
+    wallet_summary = poller_summary
+    if wallet_summary is None:
+        wallet_summary = fetch_wallet_summary(
+            wallet=settings.polymarket_overview_wallet or "",
+            from_date=from_date,
+            to_date=to_date,
+        )
+
     if wallet_summary is not None:
         current_value = wallet_summary["current_value_usdc"]
         total_pnl = data["range_summary"]["realized_pnl_usdc"]
@@ -111,6 +120,24 @@ def overview(
         data["stats"]["redeemable_usdc"] = round(wallet_summary["redeemable_usdc"], 4)
         data["stats"]["open_positions"] = int(wallet_summary["open_position_count"])
         data["stats"]["wallet_trade_activity_count"] = int(wallet_summary["trade_activity_count"])
+
     if runtime_money is not None:
         data["stats"].update(runtime_money)
+
+    # Add open positions from poller
+    open_pos = get_open_positions()
+    data["open_positions"] = [
+        {
+            "title": p["title"],
+            "slug": p["slug"],
+            "outcome": p["outcome"],
+            "size": p["size"],
+            "avg_price": p["avg_price"],
+            "current_value": p["current_value"],
+            "unrealized_pnl": p["unrealized_pnl"],
+            "status": p["status"],
+        }
+        for p in open_pos
+    ]
+
     return data

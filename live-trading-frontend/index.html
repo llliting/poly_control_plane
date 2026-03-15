@@ -33,6 +33,7 @@
         <button class="nav-btn" data-page="services">Service Detail</button>
         <button class="nav-btn" data-page="monitor">Market Monitor</button>
         <button class="nav-btn" data-page="trades">Trades</button>
+        <button class="nav-btn" data-page="pm-trades">PM Trades</button>
         <button class="nav-btn" data-page="logs">Logs</button>
       </aside>
 
@@ -160,6 +161,25 @@
           </article>
 
           <article class="card">
+            <div class="card-title">Open Positions</div>
+            <div class="table-wrap">
+              <table class="dense" id="overview-open-positions">
+                <thead>
+                  <tr>
+                    <th>Market</th>
+                    <th>Outcome</th>
+                    <th>Size</th>
+                    <th>Avg Price</th>
+                    <th>Current Value</th>
+                    <th>Unrealized PnL</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
             <div class="card-title">Incidents</div>
             <div class="chips" id="incident-chips"></div>
           </article>
@@ -193,28 +213,6 @@
           </div>
 
           <article class="card">
-            <div class="card-title">Latest Decisions</div>
-            <div class="table-wrap table-wrap-fixed-20">
-              <table class="dense" id="service-decisions">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Market</th>
-                    <th>Side</th>
-                    <th>p_up</th>
-                    <th>Threshold</th>
-                    <th>Edge</th>
-                    <th>Streak</th>
-                    <th>Traded</th>
-                    <th>No Trade Reason</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </article>
-
-          <article class="card">
             <div class="card-title">Recent Trades</div>
             <div class="table-wrap table-wrap-fixed-5">
               <table class="dense" id="service-trades">
@@ -239,21 +237,20 @@
           </article>
 
           <article class="card">
-            <div class="card-title">Live Market and Runtime Signals</div>
-            <div class="table-wrap">
-              <table class="dense" id="service-live-data">
+            <div class="card-title">Latest Decisions</div>
+            <div class="table-wrap table-wrap-fixed-5">
+              <table class="dense" id="service-decisions">
                 <thead>
                   <tr>
-                    <th>Time (ET)</th>
-                    <th>Binance</th>
-                    <th>Chainlink</th>
-                    <th>PM Mid</th>
-                    <th>PM Bid</th>
-                    <th>PM Ask</th>
-                    <th>CL-Bin Spread</th>
-                    <th>Bucket Left</th>
-                    <th>Ingest Lag</th>
-                    <th>Signal Streak</th>
+                    <th>Time</th>
+                    <th>Market</th>
+                    <th>Side</th>
+                    <th>p_up</th>
+                    <th>Threshold</th>
+                    <th>Edge</th>
+                    <th>Streak</th>
+                    <th>Traded</th>
+                    <th>No Trade Reason</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -284,17 +281,21 @@
           </div>
 
           <article class="card">
-            <div class="card-title">Price Tape (mock)</div>
+            <div class="card-title">Live Market and Runtime Signals</div>
             <div class="table-wrap">
-              <table class="dense" id="price-tape">
+              <table class="dense" id="service-live-data">
                 <thead>
                   <tr>
                     <th>Time (ET)</th>
-                    <th>Symbol</th>
                     <th>Binance</th>
                     <th>Chainlink</th>
-                    <th>Spread</th>
-                    <th>Stale</th>
+                    <th>PM Mid</th>
+                    <th>PM Bid</th>
+                    <th>PM Ask</th>
+                    <th>CL-Bin Spread</th>
+                    <th>Bucket Left</th>
+                    <th>Ingest Lag</th>
+                    <th>Signal Streak</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -318,6 +319,40 @@
             <div class="card-title">Trade Ledger</div>
             <div class="table-wrap">
               <table class="dense" id="trade-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="page" id="page-pm-trades">
+          <article class="card">
+            <div class="card-title">Polymarket Trade Controls</div>
+            <div class="trades-controls">
+              <label class="selector-row" for="pm-trades-slug-filter">
+                <span class="selector-label">Search market</span>
+                <input id="pm-trades-slug-filter" type="text" placeholder="filter by slug..." />
+              </label>
+              <label class="selector-row" for="pm-trades-side-filter">
+                <span class="selector-label">Side</span>
+                <select id="pm-trades-side-filter">
+                  <option value="">All</option>
+                  <option value="BUY">Buy</option>
+                  <option value="SELL">Sell</option>
+                </select>
+              </label>
+              <label class="selector-row" for="pm-trades-outcome-filter">
+                <span class="selector-label">Outcome</span>
+                <input id="pm-trades-outcome-filter" type="text" placeholder="e.g. Yes, No" />
+              </label>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-title">Polymarket Trade History</div>
+            <div class="table-wrap">
+              <table class="dense" id="pm-trade-table">
                 <thead></thead>
                 <tbody></tbody>
               </table>
