@@ -942,10 +942,14 @@ function renderLogs() {
 }
 
 function renderPriceMonitor() {
-  document.getElementById("binance-price").textContent = formatNumber(state.marketSummary.binance_price || 0);
-  document.getElementById("chainlink-price").textContent = formatNumber(state.marketSummary.chainlink_price || 0);
-  document.getElementById("spread-price").textContent = Number(state.marketSummary.spread || 0).toFixed(2);
-  document.getElementById("market-slug").textContent = state.marketSummary.market_slug || "-";
+  const binEl = document.getElementById("binance-price");
+  const clEl = document.getElementById("chainlink-price");
+  const spreadEl = document.getElementById("spread-price");
+  const slugEl = document.getElementById("market-slug");
+  if (binEl) binEl.textContent = formatNumber(state.marketSummary.binance_price || 0);
+  if (clEl) clEl.textContent = formatNumber(state.marketSummary.chainlink_price || 0);
+  if (spreadEl) spreadEl.textContent = Number(state.marketSummary.spread || 0).toFixed(2);
+  if (slugEl) slugEl.textContent = state.marketSummary.market_slug || "-";
 
   const s = getService();
   const rows = state.liveRowsByService[s?.name] || [];
