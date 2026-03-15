@@ -243,6 +243,11 @@ def _poll_once(wallet: str, base: str) -> None:
         _activity = parsed_activity
         _last_poll_at = time.time()
 
+    print(
+        f"[polymarket-poller] poll: value=${current_value:.2f} cash=${cash_value:.2f} "
+        f"positions=${positions_value:.2f} open={open_count} trades={len(parsed_activity)}",
+        flush=True,
+    )
     logger.info(
         "polymarket poll: value=$%.2f cash=$%.2f positions=$%.2f open=%d trades=%d",
         current_value,
@@ -265,15 +270,18 @@ def _poller_loop() -> None:
     wallet = (settings.polymarket_overview_wallet or "").strip()
     base = settings.polymarket_data_host.rstrip("/")
     if not wallet:
-        logger.warning("polymarket poller: no POLYMARKET_OVERVIEW_WALLET set, stopping")
+        print("[polymarket-poller] no POLYMARKET_OVERVIEW_WALLET set, stopping", flush=True)
+    logger.warning("polymarket poller: no POLYMARKET_OVERVIEW_WALLET set, stopping")
         return
 
+    print(f"[polymarket-poller] started: wallet={wallet} interval={_POLL_INTERVAL_SECS:.0f}s", flush=True)
     logger.info("polymarket poller started: wallet=%s interval=%.0fs", wallet, _POLL_INTERVAL_SECS)
 
     while not _stop_event.is_set():
         try:
             _poll_once(wallet, base)
-        except Exception:
+        except Exception as exc:
+            print(f"[polymarket-poller] error: {exc}", flush=True)
             logger.exception("polymarket poller: unexpected error")
         _stop_event.wait(timeout=_POLL_INTERVAL_SECS)
 
