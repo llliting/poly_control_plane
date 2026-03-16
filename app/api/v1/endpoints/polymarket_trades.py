@@ -69,6 +69,8 @@ def polymarket_positions(
     # Strip raw field
     items = [{k: v for k, v in r.items() if k != "raw"} for r in rows[:limit]]
 
+    print(f"[polymarket-positions] status={status} total={len(rows)} returning={len(items)}", flush=True)
+
     return {
         "items": items,
         "total": len(rows),

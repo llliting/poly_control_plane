@@ -999,6 +999,7 @@ function pmPositionCell(pos, key) {
 
 function renderPmPositions() {
   const table = document.getElementById("pm-position-table");
+  console.log("[renderPmPositions] table element:", table, "pmPositions count:", state.pmPositions.length, "statusFilter:", state.pmPositionStatusFilter);
   if (!table) return;
   const thead = table.querySelector("thead");
   const tbody = table.querySelector("tbody");
@@ -1057,12 +1058,16 @@ function wirePmPositionControls() {
 
 async function refreshPmPositions() {
   try {
-    const resp = await fetch(`${BASE}/polymarket-positions?status=all&limit=500&sort_by=current_value&sort_dir=desc`);
+    const url = `${BASE}/polymarket-positions?status=all&limit=500&sort_by=current_value&sort_dir=desc`;
+    console.log("[refreshPmPositions] fetching:", url);
+    const resp = await fetch(url);
+    console.log("[refreshPmPositions] response status:", resp.status);
     const data = await resp.json();
+    console.log("[refreshPmPositions] items count:", (data.items || []).length, "total:", data.total, "sample:", JSON.stringify((data.items || [])[0])?.slice(0, 200));
     state.pmPositions = data.items || [];
     renderPmPositions();
   } catch (err) {
-    console.error("refreshPmPositions failed", err);
+    console.error("[refreshPmPositions] failed", err);
   }
 }
 
