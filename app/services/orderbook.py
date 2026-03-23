@@ -25,7 +25,12 @@ def _get_json(url: str, timeout: float = 4.0) -> dict | list:
 
 
 def _resolve_token_ids(slug: str) -> tuple[str, str] | None:
-    """Resolve a market slug to (yes_token_id, no_token_id) via gamma + CLOB APIs."""
+    """Resolve a market slug to (token_id_0, token_id_1) via gamma API.
+
+    For up/down markets the outcomes are "Up"/"Down" (not "Yes"/"No").
+    We use the clobTokenIds field from gamma directly which always has
+    [first_outcome_token, second_outcome_token].
+    """
     try:
         url = f"{GAMMA_HOST}/markets?slug={urllib.parse.quote(slug)}"
         items = _get_json(url)
@@ -34,23 +39,12 @@ def _resolve_token_ids(slug: str) -> tuple[str, str] | None:
         match = next((m for m in items if m.get("slug") == slug), None)
         if not match:
             return None
-        condition_id = match.get("conditionId")
-        if not condition_id:
-            return None
-
-        market_url = f"{CLOB_HOST}/markets/{condition_id}"
-        market = _get_json(market_url)
-        tokens = market.get("tokens", [])
-        yes_token = None
-        no_token = None
-        for t in tokens:
-            outcome = (t.get("outcome") or "").upper()
-            if outcome == "YES":
-                yes_token = t.get("token_id")
-            elif outcome == "NO":
-                no_token = t.get("token_id")
-        if yes_token and no_token:
-            return (yes_token, no_token)
+        # clobTokenIds is a JSON-encoded list string like '["id1", "id2"]'
+        clob_ids_raw = match.get("clobTokenIds")
+        if clob_ids_raw:
+            clob_ids = json.loads(clob_ids_raw) if isinstance(clob_ids_raw, str) else clob_ids_raw
+            if isinstance(clob_ids, list) and len(clob_ids) >= 2:
+                return (clob_ids[0], clob_ids[1])
     except Exception:
         pass
     return None
