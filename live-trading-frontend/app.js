@@ -89,6 +89,7 @@ const state = {
   serviceActionBusy: false,
   serviceActionActionId: null,
   serviceActionPollTimer: null,
+  orderbook: null,
 };
 
 let scrollSaveTimer = null;
@@ -726,7 +727,6 @@ function renderServiceDetail() {
       (d) => `
       <tr>
         <td>${d.time}</td>
-        <td>${d.market}</td>
         <td>${d.side}</td>
         <td>${Number(d.pUp || 0).toFixed(3)}</td>
         <td>${Number(d.th || 0).toFixed(2)}</td>
@@ -738,6 +738,8 @@ function renderServiceDetail() {
     `,
     )
     .join("");
+
+  renderOrderbook();
 
   const serviceTrades = state.serviceTradesByService[s.name] || [];
   const tradeBody = document.querySelector("#service-trades tbody");
@@ -754,6 +756,63 @@ function renderServiceDetail() {
   }
 
   renderServiceControls();
+}
+
+function renderOrderbook() {
+  const ob = state.orderbook;
+  const slugEl = document.getElementById("ob-slug");
+  const yesQuote = document.getElementById("ob-yes-quote");
+  const noQuote = document.getElementById("ob-no-quote");
+  const yesTbody = document.querySelector("#ob-yes-table tbody");
+  const noTbody = document.querySelector("#ob-no-table tbody");
+
+  if (!ob || ob.error || !ob.yes || !ob.no) {
+    if (slugEl) slugEl.textContent = ob ? (ob.slug || "") : "";
+    if (yesQuote) yesQuote.textContent = "--";
+    if (noQuote) noQuote.textContent = "--";
+    if (yesTbody) yesTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim)">no data</td></tr>';
+    if (noTbody) noTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim)">no data</td></tr>';
+    return;
+  }
+
+  if (slugEl) slugEl.textContent = ob.slug || "";
+
+  const fmtPx = (v) => v != null ? Number(v).toFixed(2) : "--";
+  const fmtSz = (v) => v != null ? formatNumber(v, 0) : "--";
+
+  if (yesQuote) {
+    const bid = ob.yes.best_bid;
+    const ask = ob.yes.best_ask;
+    const spread = ob.yes.spread;
+    yesQuote.innerHTML = `<span style="color:var(--ok)">${fmtPx(bid)}</span> / <span style="color:var(--bad)">${fmtPx(ask)}</span> <span style="font-size:0.62rem;color:var(--text-dim)">spd ${fmtPx(spread)}</span>`;
+  }
+  if (noQuote) {
+    const bid = ob.no.best_bid;
+    const ask = ob.no.best_ask;
+    const spread = ob.no.spread;
+    noQuote.innerHTML = `<span style="color:var(--ok)">${fmtPx(bid)}</span> / <span style="color:var(--bad)">${fmtPx(ask)}</span> <span style="font-size:0.62rem;color:var(--text-dim)">spd ${fmtPx(spread)}</span>`;
+  }
+
+  const renderBook = (tbody, book) => {
+    const bids = book.bids || [];
+    const asks = book.asks || [];
+    const rows = Math.max(bids.length, asks.length, 1);
+    let html = "";
+    for (let i = 0; i < rows; i++) {
+      const b = bids[i];
+      const a = asks[i];
+      html += `<tr>
+        <td class="bid-cell mono">${b ? fmtPx(b.price) : ""}</td>
+        <td class="mono">${b ? fmtSz(b.size) : ""}</td>
+        <td class="ask-cell mono">${a ? fmtPx(a.price) : ""}</td>
+        <td class="mono">${a ? fmtSz(a.size) : ""}</td>
+      </tr>`;
+    }
+    tbody.innerHTML = html;
+  };
+
+  if (yesTbody) renderBook(yesTbody, ob.yes);
+  if (noTbody) renderBook(noTbody, ob.no);
 }
 
 function getTradeSortValue(trade, key) {
@@ -1203,7 +1262,9 @@ async function refreshOverviewData() {
 
 async function refreshServiceDetailData() {
   const key = state.selectedService;
-  const [detail, decisions, runtime, trades] = await Promise.all([
+  const svc = state.services.find((s) => s.name === key);
+  const obAsset = (svc && svc.asset) ? svc.asset : (key.startsWith("eth") ? "ETH" : "BTC");
+  const [detail, decisions, runtime, trades, orderbook] = await Promise.all([
     apiGet(`/services/${key}`),
     apiGet(`/services/${key}/decisions`, { limit: 50 }),
     apiGet(`/services/${key}/runtime-signals`, { limit: 50 }),
@@ -1213,7 +1274,9 @@ async function refreshServiceDetailData() {
       sort_by: "open_time",
       sort_dir: "desc",
     }),
+    apiGet("/market/orderbook", { asset: obAsset }).catch(() => null),
   ]);
+  state.orderbook = orderbook;
 
   const s = asUiService(detail.service);
   const idx = state.services.findIndex((x) => x.name === key);

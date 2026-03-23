@@ -518,6 +518,72 @@ table.dense th.sortable.active {
   color: var(--bad);
 }
 
+.split-decisions-ob {
+  grid-template-columns: 3fr 2fr;
+}
+
+.ob-slug {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  margin-left: 0.4rem;
+}
+
+.ob-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.ob-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ob-side-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.yes-label {
+  color: var(--ok);
+}
+
+.no-label {
+  color: var(--bad);
+}
+
+.ob-quote {
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent);
+  padding: 0.2rem 0;
+  border: 1px solid #3f4a53;
+  border-radius: 0.35rem;
+  background: #1b1f23;
+}
+
+.ob-book-wrap {
+  max-height: 7.5rem;
+  overflow-y: auto;
+}
+
+table.ob-table {
+  font-size: 0.64rem;
+}
+
+table.ob-table td.bid-cell {
+  color: var(--ok);
+}
+
+table.ob-table td.ask-cell {
+  color: var(--bad);
+}
+
 @media (max-width: 1080px) {
   .layout {
     grid-template-columns: 1fr;
@@ -537,6 +603,12 @@ table.dense th.sortable.active {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .split {
+    grid-template-columns: 1fr;
+  }
+  .split-decisions-ob {
+    grid-template-columns: 1fr;
+  }
+  .ob-panels {
     grid-template-columns: 1fr;
   }
   .mini-grid {

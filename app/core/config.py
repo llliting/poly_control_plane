@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     action_executor_timeout_secs: int = 120
     action_executor_max_output_chars: int = 4000
     action_command_map_json: str | None = None
+    # Bot command server settings (HTTP-based commands to bots)
+    # JSON map: {"service_key": {"host": "127.0.0.1", "port": 8081, "api_key": "secret"}}
+    bot_cmd_map_json: str | None = None
     polymarket_data_host: str = "https://data-api.polymarket.com"
     polymarket_overview_wallet: str | None = None
 

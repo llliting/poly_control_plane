@@ -8,6 +8,8 @@ import threading
 import time
 from datetime import UTC, datetime
 
+import httpx
+
 from app.core.config import settings
 from app.services.log_stream import append_log
 from app.services.repository import (
@@ -44,6 +46,79 @@ def _parse_command_map() -> dict[str, dict[str, str]]:
         if row:
             out[service_key] = row
     return out
+
+
+def _parse_bot_cmd_map() -> dict[str, dict[str, str | int]]:
+    """Parse BOT_CMD_MAP_JSON into {service_key: {host, port, api_key}}."""
+    raw = (settings.bot_cmd_map_json or "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, dict[str, str | int]] = {}
+    for service_key, entry in data.items():
+        if not isinstance(entry, dict):
+            continue
+        host = entry.get("host", "127.0.0.1")
+        port = int(entry.get("port", 8081))
+        api_key = entry.get("api_key", "")
+        out[service_key] = {"host": host, "port": port, "api_key": api_key}
+    return out
+
+
+# Maps action names to bot command server endpoints
+_ACTION_TO_CMD_ENDPOINT: dict[str, str] = {
+    "pause": "/cmd/pause-trading",
+    "resume": "/cmd/resume-trading",
+    "cancel_orders": "/cmd/cancel-all-orders",
+    "flush_telemetry": "/cmd/flush-telemetry",
+    "shutdown": "/cmd/shutdown",
+}
+
+
+def send_bot_command(
+    service_key: str,
+    action: str,
+    body: dict | None = None,
+    timeout_s: float = 5.0,
+) -> dict:
+    """Send an HTTP command to a bot's command server.
+
+    Returns {"success": bool, "status_code": int|None, "body": ..., "error": str|None}.
+    """
+    bot_cmd_map = _parse_bot_cmd_map()
+    bot = bot_cmd_map.get(service_key)
+    if not bot:
+        return {"success": False, "status_code": None, "body": None, "error": f"no bot_cmd_map entry for {service_key}"}
+
+    endpoint = _ACTION_TO_CMD_ENDPOINT.get(action)
+    if not endpoint:
+        # For update-env, use the dedicated endpoint
+        if action == "update_env":
+            endpoint = "/cmd/update-env"
+        else:
+            return {"success": False, "status_code": None, "body": None, "error": f"unknown command action: {action}"}
+
+    url = f"http://{bot['host']}:{bot['port']}{endpoint}"
+    headers: dict[str, str] = {}
+    if bot.get("api_key"):
+        headers["X-Cmd-Key"] = str(bot["api_key"])
+
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            resp = client.post(url, json=body or {}, headers=headers)
+            return {
+                "success": resp.status_code == 200,
+                "status_code": resp.status_code,
+                "body": resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text,
+                "error": None if resp.status_code == 200 else f"HTTP {resp.status_code}",
+            }
+    except Exception as err:
+        return {"success": False, "status_code": None, "body": None, "error": str(err)}
 
 
 def _runner_key() -> str:
@@ -157,6 +232,15 @@ class ActionExecutor:
         action_id = str(task.get("action_id") or "")
         service_key = str(task.get("service_key") or "")
         action = str(task.get("action") or "")
+
+        # Try HTTP bot command server first for supported actions
+        if action in _ACTION_TO_CMD_ENDPOINT or action == "update_env":
+            bot_cmd_map = _parse_bot_cmd_map()
+            if service_key in bot_cmd_map:
+                self._handle_bot_command(action_id, service_key, action, task)
+                return
+
+        # Fall back to subprocess execution
         cmd = self._command_map.get(service_key, {}).get(action)
         if not cmd:
             msg = f"no configured command for service={service_key} action={action}"
@@ -240,6 +324,54 @@ class ActionExecutor:
                 result_payload={"runner_key": self._runner_key, "command": cmd},
             )
             append_log({"ts": _iso_now(), "service_key": service_key, "level": "warn", "message": msg})
+
+    def _handle_bot_command(self, action_id: str, service_key: str, action: str, task: dict) -> None:
+        append_log(
+            {
+                "ts": _iso_now(),
+                "service_key": service_key,
+                "level": "info",
+                "message": f"bot_cmd start id={action_id} action={action} (HTTP)",
+            }
+        )
+        body = task.get("payload") or {}
+        t0 = time.monotonic()
+        result = send_bot_command(
+            service_key=service_key,
+            action=action,
+            body=body,
+            timeout_s=min(self._timeout_s, 10),
+        )
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        ok = result["success"]
+
+        complete_action_request(
+            action_id=action_id,
+            success=ok,
+            exit_code=result.get("status_code"),
+            stdout_excerpt=json.dumps(result.get("body") or "")[:self._max_chars],
+            stderr_excerpt=(result.get("error") or "")[:self._max_chars],
+            result_payload={
+                "runner_key": self._runner_key,
+                "elapsed_ms": elapsed_ms,
+                "transport": "http_bot_cmd",
+            },
+        )
+        if ok:
+            if action == "pause":
+                update_service_status(service_key=service_key, status="paused")
+            elif action == "resume":
+                update_service_status(service_key=service_key, status="healthy")
+            elif action == "shutdown":
+                update_service_status(service_key=service_key, status="stopped")
+        append_log(
+            {
+                "ts": _iso_now(),
+                "service_key": service_key,
+                "level": "info" if ok else "warn",
+                "message": f"bot_cmd finish id={action_id} action={action} ok={ok} elapsed_ms={elapsed_ms}",
+            }
+        )
 
     def _append_process_output_logs(self, service_key: str, action: str, stdout: str, stderr: str) -> None:
         for level, prefix, text in (

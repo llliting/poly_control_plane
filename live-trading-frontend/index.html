@@ -236,27 +236,54 @@
             </div>
           </article>
 
-          <article class="card">
-            <div class="card-title">Latest Decisions</div>
-            <div class="table-wrap table-wrap-fixed-5">
-              <table class="dense" id="service-decisions">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Market</th>
-                    <th>Side</th>
-                    <th>p_up</th>
-                    <th>Threshold</th>
-                    <th>Edge</th>
-                    <th>Streak</th>
-                    <th>Traded</th>
-                    <th>No Trade Reason</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </article>
+          <div class="split split-decisions-ob">
+            <article class="card">
+              <div class="card-title">Latest Decisions</div>
+              <div class="table-wrap table-wrap-fixed-5">
+                <table class="dense" id="service-decisions">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Side</th>
+                      <th>p_up</th>
+                      <th>Threshold</th>
+                      <th>Edge</th>
+                      <th>Streak</th>
+                      <th>Traded</th>
+                      <th>No Trade Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="card-title">Market Orderbook <span class="ob-slug mono" id="ob-slug"></span></div>
+              <div class="ob-panels">
+                <div class="ob-side">
+                  <div class="ob-side-label yes-label">YES</div>
+                  <div class="ob-quote" id="ob-yes-quote">--</div>
+                  <div class="table-wrap ob-book-wrap">
+                    <table class="dense ob-table" id="ob-yes-table">
+                      <thead><tr><th>Bid</th><th>Size</th><th>Ask</th><th>Size</th></tr></thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="ob-side">
+                  <div class="ob-side-label no-label">NO</div>
+                  <div class="ob-quote" id="ob-no-quote">--</div>
+                  <div class="table-wrap ob-book-wrap">
+                    <table class="dense ob-table" id="ob-no-table">
+                      <thead><tr><th>Bid</th><th>Size</th><th>Ask</th><th>Size</th></tr></thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
 
         </section>
 
