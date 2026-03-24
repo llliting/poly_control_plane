@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS decision_records (
   streak_hits smallint NOT NULL,
   streak_target smallint NOT NULL,
   traded boolean NOT NULL,
+  market_price numeric(20,8) NULL,
+  binance_price numeric(20,8) NULL,
+  binance_price_change_5m numeric(20,8) NULL,
+  danger_f_adx_3m numeric(10,6) NULL,
+  danger_f_spread_3m numeric(10,6) NULL,
+  danger_f_er_3m numeric(10,6) NULL,
   no_trade_reason text NULL
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_service_time
@@ -68,4 +74,3 @@ CREATE TABLE IF NOT EXISTS action_results (
   result_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-

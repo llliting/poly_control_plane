@@ -41,6 +41,10 @@ def upsert_runtime_snapshot(payload: dict) -> dict:
         "ingest_lag_ms": payload.get("ingest_lag_ms"),
         "streak_hits": payload.get("streak_hits"),
         "streak_target": payload.get("streak_target"),
+        "binance_price_change_5m": payload.get("binance_price_change_5m"),
+        "danger_f_adx_3m": payload.get("danger_f_adx_3m"),
+        "danger_f_spread_3m": payload.get("danger_f_spread_3m"),
+        "danger_f_er_3m": payload.get("danger_f_er_3m"),
     }
 
     with _lock:

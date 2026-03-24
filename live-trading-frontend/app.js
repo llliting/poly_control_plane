@@ -52,8 +52,8 @@ const state = {
   services: [],
   incidents: [],
   decisionsByService: {},
-  serviceTradesByService: {},
   liveRowsByService: {},
+  latestRuntimeByService: {},
   serviceHealthByKey: {},
   serviceControlsByKey: {},
   trades: [],
@@ -131,6 +131,18 @@ function formatEtTime(isoTs) {
     second: "2-digit",
     hour12: false,
   }).format(date) + " ET";
+}
+
+function formatFixedOrDash(value, decimals = 4) {
+  if (value == null || value === "") return "-";
+  const num = Number(value);
+  return Number.isFinite(num) ? num.toFixed(decimals) : "-";
+}
+
+function formatNumberOrDash(value, decimals = 2) {
+  if (value == null || value === "") return "-";
+  const num = Number(value);
+  return Number.isFinite(num) ? formatNumber(num, decimals) : "-";
 }
 
 function asUiService(raw) {
@@ -741,18 +753,37 @@ function renderServiceDetail() {
 
   renderOrderbook();
 
-  const serviceTrades = state.serviceTradesByService[s.name] || [];
-  const tradeBody = document.querySelector("#service-trades tbody");
-  if (tradeBody) {
-    tradeBody.innerHTML = serviceTrades
-      .map(
-        (t) => `
-        <tr>
-          ${TRADE_COLUMNS.map((c) => tradeCell(t, c.key)).join("")}
-        </tr>
-      `,
-      )
-      .join("");
+  const latestRuntime = state.latestRuntimeByService[s.name] || {};
+  const serviceLogBody = document.querySelector("#service-logs tbody");
+  if (serviceLogBody) {
+    if (decisions.length === 0) {
+      serviceLogBody.innerHTML =
+        '<tr><td colspan="10" style="text-align:center;color:var(--text-dim)">no logs</td></tr>';
+    } else {
+      serviceLogBody.innerHTML = decisions
+        .map((d) => {
+          const binancePrice = d.binancePrice ?? latestRuntime.binance ?? null;
+          const binanceChange5m = d.binanceChange5m ?? latestRuntime.binanceChange5m ?? null;
+          const dangerAdx = d.dangerAdx ?? latestRuntime.dangerAdx ?? null;
+          const dangerSpread = d.dangerSpread ?? latestRuntime.dangerSpread ?? null;
+          const dangerEr = d.dangerEr ?? latestRuntime.dangerEr ?? null;
+          return `
+            <tr>
+              <td>${d.market || "-"}</td>
+              <td>${d.time}</td>
+              <td>${formatFixedOrDash(d.pUp, 4)}</td>
+              <td>${d.side}</td>
+              <td>${formatNumberOrDash(d.marketPrice, 2)}</td>
+              <td>${formatNumberOrDash(binancePrice, 2)}</td>
+              <td>${binanceChange5m == null ? "-" : `${Number(binanceChange5m) >= 0 ? "+" : ""}${formatNumber(binanceChange5m, 2)}`}</td>
+              <td>${formatFixedOrDash(dangerAdx, 4)}</td>
+              <td>${formatFixedOrDash(dangerSpread, 4)}</td>
+              <td>${formatFixedOrDash(dangerEr, 4)}</td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
   }
 
   renderServiceControls();
@@ -1264,16 +1295,10 @@ async function refreshServiceDetailData() {
   const key = state.selectedService;
   const svc = state.services.find((s) => s.name === key);
   const obAsset = (svc && svc.asset) ? svc.asset : (key.startsWith("eth") ? "ETH" : "BTC");
-  const [detail, decisions, runtime, trades, orderbook] = await Promise.all([
+  const [detail, decisions, runtime, orderbook] = await Promise.all([
     apiGet(`/services/${key}`),
     apiGet(`/services/${key}/decisions`, { limit: 50 }),
     apiGet(`/services/${key}/runtime-signals`, { limit: 50 }),
-    apiGet("/trades", {
-      service_key: key,
-      limit: 50,
-      sort_by: "open_time",
-      sort_dir: "desc",
-    }),
     apiGet("/market/orderbook", { asset: obAsset }).catch(() => null),
   ]);
   state.orderbook = orderbook;
@@ -1294,13 +1319,14 @@ async function refreshServiceDetailData() {
     streak: `${d.streak_hits || 0}/${d.streak_target || 0}`,
     traded: d.traded ? "yes" : "no",
     reason: d.no_trade_reason || "",
+    marketPrice: d.market_price == null ? null : Number(d.market_price),
+    binancePrice: d.binance_price == null ? null : Number(d.binance_price),
+    binanceChange5m: d.binance_price_change_5m == null ? null : Number(d.binance_price_change_5m),
+    dangerAdx: d.danger_f_adx_3m == null ? null : Number(d.danger_f_adx_3m),
+    dangerSpread: d.danger_f_spread_3m == null ? null : Number(d.danger_f_spread_3m),
+    dangerEr: d.danger_f_er_3m == null ? null : Number(d.danger_f_er_3m),
   }));
-  let serviceTradeRows = (trades.items || []).map(mapTradeRow);
-  if (serviceTradeRows.length === 0) {
-    serviceTradeRows = state.trades.filter((t) => t.service === key);
-  }
-  state.serviceTradesByService[key] = serviceTradeRows;
-  state.liveRowsByService[key] = (runtime.items || []).map((r) => ({
+  const runtimeRows = (runtime.items || []).map((r) => ({
     ts: formatEtDateTime(r.ts),
     binance: Number(r.binance_price || 0),
     chainlink: Number(r.chainlink_price || 0),
@@ -1311,7 +1337,13 @@ async function refreshServiceDetailData() {
     bucketLeft: Number(r.bucket_seconds_left || 0),
     ingestLag: Number(r.ingest_lag_ms || 0),
     streak: `${r.streak_hits || 0}/${r.streak_target || 0}`,
+    binanceChange5m: r.binance_price_change_5m == null ? null : Number(r.binance_price_change_5m),
+    dangerAdx: r.danger_f_adx_3m == null ? null : Number(r.danger_f_adx_3m),
+    dangerSpread: r.danger_f_spread_3m == null ? null : Number(r.danger_f_spread_3m),
+    dangerEr: r.danger_f_er_3m == null ? null : Number(r.danger_f_er_3m),
   }));
+  state.liveRowsByService[key] = runtimeRows;
+  state.latestRuntimeByService[key] = runtimeRows[0] || {};
 }
 
 async function refreshTrades() {

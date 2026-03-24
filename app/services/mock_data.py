@@ -83,6 +83,12 @@ DECISIONS: dict[str, list[dict]] = {
             "streak_hits": 3,
             "streak_target": 3,
             "traded": True,
+            "market_price": 93422.12,
+            "binance_price": 93422.12,
+            "binance_price_change_5m": 118.43,
+            "danger_f_adx_3m": 0.2142,
+            "danger_f_spread_3m": 0.1084,
+            "danger_f_er_3m": 0.3321,
             "no_trade_reason": None,
         }
     ],
@@ -98,6 +104,12 @@ DECISIONS: dict[str, list[dict]] = {
             "streak_hits": 3,
             "streak_target": 3,
             "traded": True,
+            "market_price": 3288.14,
+            "binance_price": 3288.14,
+            "binance_price_change_5m": -6.82,
+            "danger_f_adx_3m": 0.1825,
+            "danger_f_spread_3m": 0.0913,
+            "danger_f_er_3m": 0.2841,
             "no_trade_reason": None,
         }
     ],
@@ -117,6 +129,10 @@ RUNTIME_ROWS: dict[str, list[dict]] = {
             "ingest_lag_ms": 420,
             "streak_hits": 3,
             "streak_target": 3,
+            "binance_price_change_5m": 118.43,
+            "danger_f_adx_3m": 0.2142,
+            "danger_f_spread_3m": 0.1084,
+            "danger_f_er_3m": 0.3321,
         }
     ],
     "eth_5m_main": [
@@ -132,6 +148,10 @@ RUNTIME_ROWS: dict[str, list[dict]] = {
             "ingest_lag_ms": 530,
             "streak_hits": 3,
             "streak_target": 3,
+            "binance_price_change_5m": -6.82,
+            "danger_f_adx_3m": 0.1825,
+            "danger_f_spread_3m": 0.0913,
+            "danger_f_er_3m": 0.2841,
         }
     ],
 }
@@ -308,4 +328,3 @@ def request_action(service_key: str, action: str) -> dict:
         "status": "queued",
         "requested_at": datetime.now(tz=UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
-

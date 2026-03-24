@@ -15,6 +15,21 @@ def _to_iso_z(value: object) -> str:
     return str(value)
 
 
+def _get_table_columns(conn, table_name: str) -> set[str]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    ).scalars().all()
+    return {str(row) for row in rows}
+
+
 def list_services_from_db() -> list[dict] | None:
     engine = get_engine()
     if engine is None:
@@ -287,28 +302,41 @@ def list_decisions_from_db(service_key: str, limit: int = 50) -> list[dict] | No
     if engine is None:
         return None
 
-    query = text(
-        """
-        SELECT
-          id,
-          occurred_at,
-          market_slug,
-          side,
-          p_up,
-          threshold,
-          edge,
-          streak_hits,
-          streak_target,
-          traded,
-          market_price,
-          no_trade_reason
-        FROM decision_records
-        WHERE service_key = :service_key
-        ORDER BY occurred_at DESC
-        LIMIT :limit
-        """
-    )
     with engine.connect() as conn:
+        columns = _get_table_columns(conn, "decision_records")
+        optional_selects = [
+            name
+            for name in [
+                "market_price",
+                "binance_price",
+                "binance_price_change_5m",
+                "danger_f_adx_3m",
+                "danger_f_spread_3m",
+                "danger_f_er_3m",
+                "no_trade_reason",
+            ]
+            if name in columns
+        ]
+        query = text(
+            f"""
+            SELECT
+              id,
+              occurred_at,
+              market_slug,
+              side,
+              p_up,
+              threshold,
+              edge,
+              streak_hits,
+              streak_target,
+              traded{"," if optional_selects else ""}
+              {", ".join(optional_selects)}
+            FROM decision_records
+            WHERE service_key = :service_key
+            ORDER BY occurred_at DESC
+            LIMIT :limit
+            """
+        )
         rows = conn.execute(query, {"service_key": service_key, "limit": limit}).mappings().all()
 
     items: list[dict] = []
@@ -325,8 +353,13 @@ def list_decisions_from_db(service_key: str, limit: int = 50) -> list[dict] | No
                 "streak_hits": int(row["streak_hits"] or 0),
                 "streak_target": int(row["streak_target"] or 0),
                 "traded": bool(row["traded"]),
-                "market_price": float(row["market_price"] or 0) if row["market_price"] is not None else None,
-                "no_trade_reason": row["no_trade_reason"],
+                "market_price": float(row["market_price"] or 0) if row.get("market_price") is not None else None,
+                "binance_price": float(row["binance_price"] or 0) if row.get("binance_price") is not None else None,
+                "binance_price_change_5m": float(row["binance_price_change_5m"] or 0) if row.get("binance_price_change_5m") is not None else None,
+                "danger_f_adx_3m": float(row["danger_f_adx_3m"] or 0) if row.get("danger_f_adx_3m") is not None else None,
+                "danger_f_spread_3m": float(row["danger_f_spread_3m"] or 0) if row.get("danger_f_spread_3m") is not None else None,
+                "danger_f_er_3m": float(row["danger_f_er_3m"] or 0) if row.get("danger_f_er_3m") is not None else None,
+                "no_trade_reason": row.get("no_trade_reason"),
             }
         )
     return items
@@ -810,41 +843,7 @@ def upsert_decision(payload: dict) -> dict | None:
         LIMIT 1
         """
     )
-    insert_query = text(
-        """
-        INSERT INTO decision_records (
-          id,
-          service_key,
-          occurred_at,
-          market_slug,
-          side,
-          p_up,
-          threshold,
-          edge,
-          streak_hits,
-          streak_target,
-          traded,
-          market_price,
-          no_trade_reason
-        )
-        VALUES (
-          :id,
-          :service_key,
-          CAST(:occurred_at AS timestamptz),
-          :market_slug,
-          :side,
-          :p_up,
-          :threshold,
-          :edge,
-          :streak_hits,
-          :streak_target,
-          :traded,
-          :market_price,
-          :no_trade_reason
-        )
-        """
-    )
-    params = {
+    base_params = {
         "service_key": payload["service_key"],
         "occurred_at": payload["occurred_at"],
         "market_slug": payload["market_slug"],
@@ -856,14 +855,68 @@ def upsert_decision(payload: dict) -> dict | None:
         "streak_target": payload["streak_target"],
         "traded": payload["traded"],
         "market_price": payload.get("market_price"),
+        "binance_price": payload.get("binance_price"),
+        "binance_price_change_5m": payload.get("binance_price_change_5m"),
+        "danger_f_adx_3m": payload.get("danger_f_adx_3m"),
+        "danger_f_spread_3m": payload.get("danger_f_spread_3m"),
+        "danger_f_er_3m": payload.get("danger_f_er_3m"),
         "no_trade_reason": payload.get("no_trade_reason"),
     }
     with engine.begin() as conn:
-        existing = conn.execute(select_query, params).mappings().first()
+        existing = conn.execute(select_query, base_params).mappings().first()
         if existing is not None:
             return {"decision_id": str(existing["id"]), "status": "exists"}
+        columns = _get_table_columns(conn, "decision_records")
+        insert_columns = [
+            "id",
+            "service_key",
+            "occurred_at",
+            "market_slug",
+            "side",
+            "p_up",
+            "threshold",
+            "edge",
+            "streak_hits",
+            "streak_target",
+            "traded",
+        ]
+        value_tokens = [
+            ":id",
+            ":service_key",
+            "CAST(:occurred_at AS timestamptz)",
+            ":market_slug",
+            ":side",
+            ":p_up",
+            ":threshold",
+            ":edge",
+            ":streak_hits",
+            ":streak_target",
+            ":traded",
+        ]
+        for name in [
+            "market_price",
+            "binance_price",
+            "binance_price_change_5m",
+            "danger_f_adx_3m",
+            "danger_f_spread_3m",
+            "danger_f_er_3m",
+            "no_trade_reason",
+        ]:
+            if name in columns:
+                insert_columns.append(name)
+                value_tokens.append(f":{name}")
+        insert_query = text(
+            f"""
+            INSERT INTO decision_records (
+              {", ".join(insert_columns)}
+            )
+            VALUES (
+              {", ".join(value_tokens)}
+            )
+            """
+        )
         decision_id = str(uuid4())
-        conn.execute(insert_query, {"id": decision_id, **params})
+        conn.execute(insert_query, {"id": decision_id, **base_params})
     return {"decision_id": decision_id, "status": "inserted"}
 
 

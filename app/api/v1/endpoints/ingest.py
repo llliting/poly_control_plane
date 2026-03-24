@@ -40,6 +40,10 @@ class RuntimeIngest(BaseModel):
     ingest_lag_ms: int | None = None
     streak_hits: int | None = None
     streak_target: int | None = None
+    binance_price_change_5m: float | None = None
+    danger_f_adx_3m: float | None = None
+    danger_f_spread_3m: float | None = None
+    danger_f_er_3m: float | None = None
 
 
 class DecisionIngest(BaseModel):
@@ -54,6 +58,11 @@ class DecisionIngest(BaseModel):
     streak_target: int
     traded: bool
     market_price: float | None = None
+    binance_price: float | None = None
+    binance_price_change_5m: float | None = None
+    danger_f_adx_3m: float | None = None
+    danger_f_spread_3m: float | None = None
+    danger_f_er_3m: float | None = None
     no_trade_reason: str | None = None
 
 

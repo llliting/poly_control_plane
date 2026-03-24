@@ -117,6 +117,10 @@ def runtime_signals(service_key: str, limit: int = Query(default=50, ge=1, le=50
                     "ingest_lag_ms": int(item["ingest_lag_ms"] or 0),
                     "streak_hits": int(item["streak_hits"] or 0),
                     "streak_target": int(item["streak_target"] or 0),
+                    "binance_price_change_5m": float(item["binance_price_change_5m"]) if item.get("binance_price_change_5m") is not None else None,
+                    "danger_f_adx_3m": float(item["danger_f_adx_3m"]) if item.get("danger_f_adx_3m") is not None else None,
+                    "danger_f_spread_3m": float(item["danger_f_spread_3m"]) if item.get("danger_f_spread_3m") is not None else None,
+                    "danger_f_er_3m": float(item["danger_f_er_3m"]) if item.get("danger_f_er_3m") is not None else None,
                 }
                 for item in live_items
             ]
