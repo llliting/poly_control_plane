@@ -737,11 +737,13 @@ function renderServiceDetail() {
   const currentUpOrderbookPrice =
     orderbook && orderbook.yes
       ? (
-          Number.isFinite(Number(orderbook.yes.best_ask))
-            ? Number(orderbook.yes.best_ask)
-            : Number.isFinite(Number(orderbook.yes.best_bid))
-              ? Number(orderbook.yes.best_bid)
-              : null
+          orderbook.yes.mid != null && Number.isFinite(Number(orderbook.yes.mid)) && Number(orderbook.yes.mid) > 0
+            ? Number(orderbook.yes.mid)
+            : orderbook.yes.best_ask != null && Number.isFinite(Number(orderbook.yes.best_ask)) && Number(orderbook.yes.best_ask) > 0
+              ? Number(orderbook.yes.best_ask)
+              : orderbook.yes.best_bid != null && Number.isFinite(Number(orderbook.yes.best_bid)) && Number(orderbook.yes.best_bid) > 0
+                ? Number(orderbook.yes.best_bid)
+                : null
         )
       : null;
   const chartEl = document.getElementById("service-signal-chart");
@@ -857,7 +859,9 @@ function renderServiceDetail() {
     } else {
       serviceLogBody.innerHTML = decisions
         .map((d) => {
-          const upPrice = latestDecisionUpPrice;
+          const upPrice = currentUpOrderbookPrice ??
+            (Number.isFinite(d.marketPrice) && d.marketPrice > 0 && d.marketPrice <= 1 ? d.marketPrice : null) ??
+            latestDecisionUpPrice;
           const binancePrice = d.binancePrice ?? latestRuntime.binance ?? null;
           const binanceChange5m = d.binanceChange5m ?? latestRuntime.binanceChange5m ?? null;
           const dangerAdx = d.dangerAdx ?? latestRuntime.dangerAdx ?? null;
@@ -1383,45 +1387,35 @@ function dualSparklineSvg(seriesA, seriesB, opts = {}) {
   if (!rows.length) return "";
 
   const padL = 32;  // left axis
-  const padR = 32;  // right axis
+  const padR = 4;
   const padT = 4;
   const padB = 2;
   const totalW = 420;
   const totalH = 84;
   const w = totalW - padL - padR;
   const h = totalH - padT - padB;
-  const minA = typeof opts.min === "number" ? opts.min : 0;
-  const maxA = typeof opts.max === "number" ? opts.max : 1;
-  const rangeA = Math.max(maxA - minA, 0.0001);
-  // Compute price axis range from series B values
-  const bVals = rows.map((r) => r.b).filter(Number.isFinite);
-  const minB = typeof opts.minB === "number" ? opts.minB : (bVals.length ? Math.min(...bVals) : 0);
-  const maxB = typeof opts.maxB === "number" ? opts.maxB : (bVals.length ? Math.max(...bVals) : 1);
-  const rangeB = Math.max(maxB - minB, 0.0001);
+  const min = typeof opts.min === "number" ? opts.min : 0;
+  const max = typeof opts.max === "number" ? opts.max : 1;
+  const range = Math.max(max - min, 0.0001);
   const colorA = opts.colorA || "#7cc6fe";
   const colorB = opts.colorB || "#3ddc97";
-  const toPointA = (value, idx) => {
+  const toPoint = (value, idx) => {
     const x = padL + (idx / Math.max(rows.length - 1, 1)) * w;
-    const y = padT + h - ((Math.min(maxA, Math.max(minA, Number(value))) - minA) / rangeA) * h;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
-  };
-  const toPointB = (value, idx) => {
-    const x = padL + (idx / Math.max(rows.length - 1, 1)) * w;
-    const y = padT + h - ((Math.min(maxB, Math.max(minB, Number(value))) - minB) / rangeB) * h;
+    const y = padT + h - ((Math.min(max, Math.max(min, Number(value))) - min) / range) * h;
     return `${x.toFixed(2)},${y.toFixed(2)}`;
   };
   const polylineA = rows
-    .map((row, idx) => (Number.isFinite(row.a) ? toPointA(row.a, idx) : null))
+    .map((row, idx) => (Number.isFinite(row.a) ? toPoint(row.a, idx) : null))
     .filter(Boolean)
     .join(" ");
   const polylineB = rows
-    .map((row, idx) => (Number.isFinite(row.b) ? toPointB(row.b, idx) : null))
+    .map((row, idx) => (Number.isFinite(row.b) ? toPoint(row.b, idx) : null))
     .filter(Boolean)
     .join(" ");
   const circlesA = rows
     .map((row, idx) => {
       if (!Number.isFinite(row.a)) return "";
-      const [cx, cy] = toPointA(row.a, idx).split(",");
+      const [cx, cy] = toPoint(row.a, idx).split(",");
       const tip = escapeXml(`${row.label}: p_up ${Number(row.a).toFixed(3)}`);
       return `<circle cx="${cx}" cy="${cy}" r="2.9" fill="${colorA}" fill-opacity="0.45"><title>${tip}</title></circle>`;
     })
@@ -1429,38 +1423,29 @@ function dualSparklineSvg(seriesA, seriesB, opts = {}) {
   const circlesB = rows
     .map((row, idx) => {
       if (!Number.isFinite(row.b)) return "";
-      const [cx, cy] = toPointB(row.b, idx).split(",");
+      const [cx, cy] = toPoint(row.b, idx).split(",");
       const tip = escapeXml(`${row.label}: up_px ${Number(row.b).toFixed(3)}`);
       return `<circle cx="${cx}" cy="${cy}" r="2.9" fill="${colorB}" fill-opacity="0.45"><title>${tip}</title></circle>`;
     })
     .join("");
-  // Grid lines (prob axis: 0.25, 0.50, 0.75)
+  // Grid lines (0.25, 0.50, 0.75)
   const grid = [0.25, 0.5, 0.75]
     .map((ratio) => {
       const y = padT + h - ratio * h;
       return `<line x1="${padL}" y1="${y.toFixed(2)}" x2="${padL + w}" y2="${y.toFixed(2)}" stroke="#3f4a53" stroke-width="1" stroke-dasharray="4 4" />`;
     })
     .join("");
-  // Left axis labels (prob: 0, 0.25, 0.50, 0.75, 1.00)
-  const leftAxis = [0, 0.25, 0.5, 0.75, 1.0]
+  // Shared axis labels (0-1 scale for both prob and price)
+  const axisLabels = [0, 0.25, 0.5, 0.75, 1.0]
     .map((v) => {
-      const y = padT + h - ((v - minA) / rangeA) * h;
-      return `<text x="${padL - 3}" y="${y.toFixed(2)}" fill="${colorA}" font-size="7" text-anchor="end" dominant-baseline="middle">${v.toFixed(2)}</text>`;
-    })
-    .join("");
-  // Right axis labels (price scale)
-  const rightTicks = bVals.length ? [minB, minB + rangeB * 0.5, maxB] : [0, 0.5, 1];
-  const rightAxis = rightTicks
-    .map((v) => {
-      const y = padT + h - ((v - minB) / rangeB) * h;
-      return `<text x="${padL + w + 3}" y="${y.toFixed(2)}" fill="${colorB}" font-size="7" text-anchor="start" dominant-baseline="middle">${v.toFixed(3)}</text>`;
+      const y = padT + h - ((v - min) / range) * h;
+      return `<text x="${padL - 3}" y="${y.toFixed(2)}" fill="#8b949e" font-size="7" text-anchor="end" dominant-baseline="middle">${v.toFixed(2)}</text>`;
     })
     .join("");
   return `
     <svg viewBox="0 0 ${totalW} ${totalH}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
       ${grid}
-      ${leftAxis}
-      ${rightAxis}
+      ${axisLabels}
       <polyline fill="none" stroke="${colorA}" stroke-width="2.2" points="${polylineA}" />
       <polyline fill="none" stroke="${colorB}" stroke-width="2.2" points="${polylineB}" />
       ${circlesA}
