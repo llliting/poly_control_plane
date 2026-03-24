@@ -761,6 +761,11 @@ function renderServiceDetail() {
   }
 
   const decisions = state.decisionsByService[s.name] || [];
+  const latestDecisionUpPrice =
+    liveRows.find((r) => Number.isFinite(r.pmMid))?.pmMid ??
+    liveRows.find((r) => Number.isFinite(r.pmAsk))?.pmAsk ??
+    liveRows.find((r) => Number.isFinite(r.pmBid))?.pmBid ??
+    null;
   const dtbody = document.querySelector("#service-decisions tbody");
   dtbody.innerHTML = decisions
     .map(
@@ -769,6 +774,7 @@ function renderServiceDetail() {
         <td>${d.time}</td>
         <td>${d.side}</td>
         <td>${Number(d.pUp || 0).toFixed(3)}</td>
+        <td>${formatFixedOrDash(d.upPrice ?? latestDecisionUpPrice, 3)}</td>
         <td>${Number(d.th || 0).toFixed(2)}</td>
         <td>${Number(d.edge || 0).toFixed(3)}</td>
         <td>${d.streak}</td>
