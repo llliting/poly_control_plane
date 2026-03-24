@@ -374,6 +374,7 @@ def list_runtime_signals_from_db(service_key: str, limit: int = 50) -> list[dict
         """
         SELECT
           captured_at,
+          p_up,
           binance_price,
           chainlink_price,
           pm_mid,
@@ -398,6 +399,7 @@ def list_runtime_signals_from_db(service_key: str, limit: int = 50) -> list[dict
         items.append(
             {
                 "ts": _to_iso_z(row["captured_at"]),
+                "p_up": float(row["p_up"] or 0) if row["p_up"] is not None else None,
                 "binance_price": float(row["binance_price"] or 0),
                 "chainlink_price": float(row["chainlink_price"] or 0),
                 "pm_mid": float(row["pm_mid"] or 0),

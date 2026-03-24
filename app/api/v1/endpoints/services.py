@@ -107,6 +107,7 @@ def runtime_signals(service_key: str, limit: int = Query(default=50, ge=1, le=50
             "items": [
                 {
                     "ts": item["captured_at"],
+                    "p_up": float(item["p_up"] or 0.0) if item.get("p_up") is not None else None,
                     "binance_price": float(item["binance_price"] or 0.0),
                     "chainlink_price": float(item["chainlink_price"] or 0.0),
                     "pm_mid": float(item["pm_mid"] or 0.0),

@@ -119,6 +119,7 @@ RUNTIME_ROWS: dict[str, list[dict]] = {
     "btc_5m_main": [
         {
             "ts": "2026-03-12T03:20:55Z",
+            "p_up": 0.91,
             "binance_price": 93422.12,
             "chainlink_price": 93417.88,
             "pm_mid": 0.432,
@@ -138,6 +139,7 @@ RUNTIME_ROWS: dict[str, list[dict]] = {
     "eth_5m_main": [
         {
             "ts": "2026-03-12T03:20:57Z",
+            "p_up": 0.31,
             "binance_price": 3288.14,
             "chainlink_price": 3287.42,
             "pm_mid": 0.578,

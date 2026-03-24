@@ -732,6 +732,34 @@ function renderServiceDetail() {
     .map(([k, v]) => `<div class="k">${k}</div><div>${v}</div>`)
     .join("");
 
+  const liveRows = state.liveRowsByService[s.name] || [];
+  const chartEl = document.getElementById("service-signal-chart");
+  const chartMetaEl = document.getElementById("service-signal-chart-meta");
+  if (chartEl && chartMetaEl) {
+    const ordered = [...liveRows].reverse();
+    const pSeries = ordered.map((r) => ({
+      label: r.ts,
+      value: Number.isFinite(r.pUp) ? r.pUp : null,
+    }));
+    const priceSeries = ordered.map((r) => ({
+      label: r.ts,
+      value: Number.isFinite(r.pmMid) ? r.pmMid : null,
+    }));
+    const hasData =
+      pSeries.some((row) => Number.isFinite(row.value)) ||
+      priceSeries.some((row) => Number.isFinite(row.value));
+    chartMetaEl.innerHTML =
+      '<span style="color:#7cc6fe">p_up</span> vs <span style="color:#3ddc97">UP px</span>';
+    chartEl.innerHTML = hasData
+      ? dualSparklineSvg(pSeries, priceSeries, {
+          min: 0,
+          max: 1,
+          colorA: "#7cc6fe",
+          colorB: "#3ddc97",
+        })
+      : '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:0.7rem">no live signal data</div>';
+  }
+
   const decisions = state.decisionsByService[s.name] || [];
   const dtbody = document.querySelector("#service-decisions tbody");
   dtbody.innerHTML = decisions
@@ -1271,6 +1299,68 @@ function sparklineSvg(values, color, opts = {}) {
   `;
 }
 
+function dualSparklineSvg(seriesA, seriesB, opts = {}) {
+  const rows = [];
+  for (let i = 0; i < Math.max(seriesA.length, seriesB.length); i += 1) {
+    const a = seriesA[i];
+    const b = seriesB[i];
+    if (!a && !b) continue;
+    rows.push({
+      label: a?.label || b?.label || `point ${i + 1}`,
+      a: a?.value,
+      b: b?.value,
+    });
+  }
+  if (!rows.length) return "";
+
+  const w = 420;
+  const h = 78;
+  const min = typeof opts.min === "number" ? opts.min : 0;
+  const max = typeof opts.max === "number" ? opts.max : 1;
+  const range = Math.max(max - min, 0.0001);
+  const colorA = opts.colorA || "#7cc6fe";
+  const colorB = opts.colorB || "#3ddc97";
+  const toPoint = (value, idx) => {
+    const x = (idx / Math.max(rows.length - 1, 1)) * w;
+    const y = h - ((Math.min(max, Math.max(min, Number(value))) - min) / range) * h;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  };
+  const polyline = (key) =>
+    rows
+      .map((row, idx) => (Number.isFinite(row[key]) ? toPoint(row[key], idx) : null))
+      .filter(Boolean)
+      .join(" ");
+  const circles = (key, color, label) =>
+    rows
+      .map((row, idx) => {
+        if (!Number.isFinite(row[key])) return "";
+        const [cx, cy] = toPoint(row[key], idx).split(",");
+        const tip = escapeXml(`${row.label}: ${label} ${Number(row[key]).toFixed(3)}`);
+        return `
+          <circle cx="${cx}" cy="${cy}" r="2.9" fill="${color}" fill-opacity="0.45">
+            <title>${tip}</title>
+          </circle>
+        `;
+      })
+      .join("");
+  const grid = [0.25, 0.5, 0.75]
+    .map((ratio) => {
+      const y = h - ratio * h;
+      return `<line x1="0" y1="${y.toFixed(2)}" x2="${w}" y2="${y.toFixed(2)}" stroke="#3f4a53" stroke-width="1" stroke-dasharray="4 4" />`;
+    })
+    .join("");
+
+  return `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="100%">
+      ${grid}
+      <polyline fill="none" stroke="${colorA}" stroke-width="2.2" points="${polyline("a")}" />
+      <polyline fill="none" stroke="${colorB}" stroke-width="2.2" points="${polyline("b")}" />
+      ${circles("a", colorA, "p_up")}
+      ${circles("b", colorB, "up_px")}
+    </svg>
+  `;
+}
+
 async function refreshServices() {
   const data = await apiGet("/services");
   state.services = (data.items || []).map(asUiService);
@@ -1328,11 +1418,12 @@ async function refreshServiceDetailData() {
   }));
   const runtimeRows = (runtime.items || []).map((r) => ({
     ts: formatEtDateTime(r.ts),
+    pUp: r.p_up == null ? null : Number(r.p_up),
     binance: Number(r.binance_price || 0),
     chainlink: Number(r.chainlink_price || 0),
-    pmMid: Number(r.pm_mid || 0),
-    pmBid: Number(r.pm_bid || 0),
-    pmAsk: Number(r.pm_ask || 0),
+    pmMid: r.pm_mid == null ? null : Number(r.pm_mid),
+    pmBid: r.pm_bid == null ? null : Number(r.pm_bid),
+    pmAsk: r.pm_ask == null ? null : Number(r.pm_ask),
     clBinSpread: Number(r.cl_bin_spread || 0),
     bucketLeft: Number(r.bucket_seconds_left || 0),
     ingestLag: Number(r.ingest_lag_ms || 0),
