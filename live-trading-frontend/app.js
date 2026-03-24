@@ -702,6 +702,7 @@ function renderServiceDetail() {
   const s = getService();
   if (!s) return;
   const health = state.serviceHealthByKey[s.name] || {};
+  const orderbook = state.orderbook;
 
   const serviceKv = document.getElementById("service-kv");
   serviceKv.innerHTML = [
@@ -733,6 +734,19 @@ function renderServiceDetail() {
     .join("");
 
   const liveRows = state.liveRowsByService[s.name] || [];
+  const currentUpOrderbookPrice =
+    orderbook && orderbook.yes
+      ? (
+          Number.isFinite(Number(orderbook.yes.best_bid)) &&
+          Number.isFinite(Number(orderbook.yes.best_ask))
+            ? (Number(orderbook.yes.best_bid) + Number(orderbook.yes.best_ask)) / 2
+            : Number.isFinite(Number(orderbook.yes.best_ask))
+              ? Number(orderbook.yes.best_ask)
+              : Number.isFinite(Number(orderbook.yes.best_bid))
+                ? Number(orderbook.yes.best_bid)
+                : null
+        )
+      : null;
   const chartEl = document.getElementById("service-signal-chart");
   const chartMetaEl = document.getElementById("service-signal-chart-meta");
   if (chartEl && chartMetaEl) {
@@ -741,9 +755,14 @@ function renderServiceDetail() {
       label: r.ts,
       value: Number.isFinite(r.pUp) ? r.pUp : null,
     }));
-    const priceSeries = ordered.map((r) => ({
+    const priceSeries = ordered.map((r, idx) => ({
       label: r.ts,
-      value: Number.isFinite(r.pmMid) ? r.pmMid : null,
+      value:
+        idx === ordered.length - 1 && Number.isFinite(currentUpOrderbookPrice)
+          ? currentUpOrderbookPrice
+          : Number.isFinite(r.pmMid)
+            ? r.pmMid
+            : null,
     }));
     const hasData =
       pSeries.some((row) => Number.isFinite(row.value)) ||
@@ -762,6 +781,7 @@ function renderServiceDetail() {
 
   const decisions = state.decisionsByService[s.name] || [];
   const latestDecisionUpPrice =
+    currentUpOrderbookPrice ??
     liveRows.find((r) => Number.isFinite(r.pmMid))?.pmMid ??
     liveRows.find((r) => Number.isFinite(r.pmAsk))?.pmAsk ??
     liveRows.find((r) => Number.isFinite(r.pmBid))?.pmBid ??
