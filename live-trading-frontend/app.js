@@ -803,8 +803,13 @@ function renderServiceDetail() {
     const hasData =
       pSeries.some((row) => Number.isFinite(row.value)) ||
       priceSeries.some((row) => Number.isFinite(row.value));
+    // Show latest p_up and UP px numbers next to chart meta label
+    const lastPUp = [...pSeries].reverse().find((r) => Number.isFinite(r.value));
+    const lastUpPx = [...priceSeries].reverse().find((r) => Number.isFinite(r.value));
     chartMetaEl.innerHTML =
-      '<span style="color:#7cc6fe">p_up</span> vs <span style="color:#3ddc97">UP px</span>';
+      `<span style="color:#7cc6fe">p_up: <b>${lastPUp ? Number(lastPUp.value).toFixed(3) : "-"}</b></span>` +
+      ` &nbsp; ` +
+      `<span style="color:#3ddc97">UP px: <b>${lastUpPx ? Number(lastUpPx.value).toFixed(3) : "-"}</b></span>`;
     chartEl.innerHTML = hasData
       ? dualSparklineSvg(pSeries, priceSeries, {
           min: 0,
@@ -852,7 +857,7 @@ function renderServiceDetail() {
     } else {
       serviceLogBody.innerHTML = decisions
         .map((d) => {
-          const upPrice = d.marketPrice ?? latestDecisionUpPrice ?? null;
+          const upPrice = latestDecisionUpPrice;
           const binancePrice = d.binancePrice ?? latestRuntime.binance ?? null;
           const binanceChange5m = d.binanceChange5m ?? latestRuntime.binanceChange5m ?? null;
           const dangerAdx = d.dangerAdx ?? latestRuntime.dangerAdx ?? null;
@@ -1379,10 +1384,10 @@ function dualSparklineSvg(seriesA, seriesB, opts = {}) {
 
   const padL = 32;  // left axis
   const padR = 32;  // right axis
-  const padT = 18;  // top for latest values
+  const padT = 4;
   const padB = 2;
   const totalW = 420;
-  const totalH = 98;
+  const totalH = 84;
   const w = totalW - padL - padR;
   const h = totalH - padT - padB;
   const minA = typeof opts.min === "number" ? opts.min : 0;
@@ -1451,21 +1456,11 @@ function dualSparklineSvg(seriesA, seriesB, opts = {}) {
       return `<text x="${padL + w + 3}" y="${y.toFixed(2)}" fill="${colorB}" font-size="7" text-anchor="start" dominant-baseline="middle">${v.toFixed(3)}</text>`;
     })
     .join("");
-  // Latest values displayed on top
-  const lastA = [...rows].reverse().find((r) => Number.isFinite(r.a));
-  const lastB = [...rows].reverse().find((r) => Number.isFinite(r.b));
-  const topLabel =
-    `<text x="${padL}" y="10" fill="${colorA}" font-size="9" font-weight="bold" text-anchor="start">` +
-    `p_up: ${lastA ? Number(lastA.a).toFixed(3) : "-"}</text>` +
-    `<text x="${padL + w}" y="10" fill="${colorB}" font-size="9" font-weight="bold" text-anchor="end">` +
-    `UP px: ${lastB ? Number(lastB.b).toFixed(3) : "-"}</text>`;
-
   return `
     <svg viewBox="0 0 ${totalW} ${totalH}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
       ${grid}
       ${leftAxis}
       ${rightAxis}
-      ${topLabel}
       <polyline fill="none" stroke="${colorA}" stroke-width="2.2" points="${polylineA}" />
       <polyline fill="none" stroke="${colorB}" stroke-width="2.2" points="${polylineB}" />
       ${circlesA}
