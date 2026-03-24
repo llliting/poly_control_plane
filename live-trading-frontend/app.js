@@ -747,20 +747,59 @@ function renderServiceDetail() {
   const chartEl = document.getElementById("service-signal-chart");
   const chartMetaEl = document.getElementById("service-signal-chart-meta");
   if (chartEl && chartMetaEl) {
-    const ordered = [...liveRows].reverse();
-    const pSeries = ordered.map((r) => ({
-      label: r.ts,
-      value: Number.isFinite(r.pUp) ? r.pUp : null,
-    }));
-    const priceSeries = ordered.map((r, idx) => ({
-      label: r.ts,
-      value:
-        idx === ordered.length - 1 && Number.isFinite(currentUpOrderbookPrice)
-          ? currentUpOrderbookPrice
-          : Number.isFinite(r.pmMid)
-            ? r.pmMid
-            : null,
-    }));
+    const decisions = state.decisionsByService[s.name] || [];
+    // Runtime signals may be empty (in-memory only, lost on restart) and
+    // pm_mid is always 0 from the Rust bot.  Fall back to decision data
+    // which has both p_up and market_price persisted in the DB.
+    const hasMeaningfulRuntime = liveRows.some(
+      (r) => Number.isFinite(r.pUp) && r.pUp !== 0,
+    );
+    const hasMeaningfulPmMid = liveRows.some(
+      (r) => Number.isFinite(r.pmMid) && r.pmMid !== 0,
+    );
+    let pSeries, priceSeries;
+    if (hasMeaningfulRuntime && hasMeaningfulPmMid) {
+      // Ideal path: both series from runtime signals
+      const ordered = [...liveRows].reverse();
+      pSeries = ordered.map((r) => ({
+        label: r.ts,
+        value: Number.isFinite(r.pUp) ? r.pUp : null,
+      }));
+      priceSeries = ordered.map((r, idx) => ({
+        label: r.ts,
+        value:
+          idx === ordered.length - 1 && Number.isFinite(currentUpOrderbookPrice)
+            ? currentUpOrderbookPrice
+            : Number.isFinite(r.pmMid) ? r.pmMid : null,
+      }));
+    } else if (hasMeaningfulRuntime) {
+      // Have p_up from runtime but no pm_mid; use market_price from decisions for price
+      const ordered = [...liveRows].reverse();
+      pSeries = ordered.map((r) => ({
+        label: r.ts,
+        value: Number.isFinite(r.pUp) ? r.pUp : null,
+      }));
+      // Build price series from decisions (each has market_price at decision time)
+      const decisionPrices = [...decisions].reverse();
+      priceSeries = decisionPrices.map((d) => ({
+        label: d.time,
+        value: Number.isFinite(d.marketPrice) ? d.marketPrice : null,
+      }));
+    } else if (decisions.length > 0) {
+      // No runtime signals; build both series from decision data
+      const decOrdered = [...decisions].reverse();
+      pSeries = decOrdered.map((d) => ({
+        label: d.time,
+        value: Number.isFinite(d.pUp) ? d.pUp : null,
+      }));
+      priceSeries = decOrdered.map((d) => ({
+        label: d.time,
+        value: Number.isFinite(d.marketPrice) ? d.marketPrice : null,
+      }));
+    } else {
+      pSeries = [];
+      priceSeries = [];
+    }
     const hasData =
       pSeries.some((row) => Number.isFinite(row.value)) ||
       priceSeries.some((row) => Number.isFinite(row.value));
@@ -779,10 +818,10 @@ function renderServiceDetail() {
   const decisions = state.decisionsByService[s.name] || [];
   const latestDecisionUpPrice =
     currentUpOrderbookPrice ??
-    liveRows.find((r) => Number.isFinite(r.pmMid))?.pmMid ??
-    liveRows.find((r) => Number.isFinite(r.pmAsk))?.pmAsk ??
-    liveRows.find((r) => Number.isFinite(r.pmBid))?.pmBid ??
-    null;
+    liveRows.find((r) => Number.isFinite(r.pmMid) && r.pmMid !== 0)?.pmMid ??
+    liveRows.find((r) => Number.isFinite(r.pmAsk) && r.pmAsk !== 0)?.pmAsk ??
+    liveRows.find((r) => Number.isFinite(r.pmBid) && r.pmBid !== 0)?.pmBid ??
+    (decisions.length > 0 && Number.isFinite(decisions[0].marketPrice) ? decisions[0].marketPrice : null);
   const dtbody = document.querySelector("#service-decisions tbody");
   dtbody.innerHTML = decisions
     .map(
@@ -1409,19 +1448,20 @@ async function refreshServiceDetailData() {
   const svc = state.services.find((s) => s.name === key);
   const obAsset = (svc && svc.asset) ? svc.asset : (key.startsWith("eth") ? "ETH" : "BTC");
   const [detail, decisions, runtime, orderbook] = await Promise.all([
-    apiGet(`/services/${key}`),
-    apiGet(`/services/${key}/decisions`, { limit: 50 }),
-    apiGet(`/services/${key}/runtime-signals`, { limit: 50 }),
+    apiGet(`/services/${key}`).catch(() => null),
+    apiGet(`/services/${key}/decisions`, { limit: 50 }).catch(() => ({ items: [] })),
+    apiGet(`/services/${key}/runtime-signals`, { limit: 50 }).catch(() => ({ items: [] })),
     apiGet("/market/orderbook", { asset: obAsset }).catch(() => null),
   ]);
   state.orderbook = orderbook;
 
-  const s = asUiService(detail.service);
-  const idx = state.services.findIndex((x) => x.name === key);
-  if (idx >= 0) state.services[idx] = { ...state.services[idx], ...s };
-
-  state.serviceHealthByKey[key] = detail.health || {};
-  state.serviceControlsByKey[key] = detail.controls || {};
+  if (detail && detail.service) {
+    const s = asUiService(detail.service);
+    const idx = state.services.findIndex((x) => x.name === key);
+    if (idx >= 0) state.services[idx] = { ...state.services[idx], ...s };
+    state.serviceHealthByKey[key] = detail.health || {};
+    state.serviceControlsByKey[key] = detail.controls || {};
+  }
   state.decisionsByService[key] = (decisions.items || []).map((d) => ({
     time: formatEtDateTime(d.ts),
     market: d.market_slug,
@@ -1444,9 +1484,9 @@ async function refreshServiceDetailData() {
     pUp: r.p_up == null ? null : Number(r.p_up),
     binance: Number(r.binance_price || 0),
     chainlink: Number(r.chainlink_price || 0),
-    pmMid: r.pm_mid == null ? null : Number(r.pm_mid),
-    pmBid: r.pm_bid == null ? null : Number(r.pm_bid),
-    pmAsk: r.pm_ask == null ? null : Number(r.pm_ask),
+    pmMid: (r.pm_mid == null || r.pm_mid === 0) ? null : Number(r.pm_mid),
+    pmBid: (r.pm_bid == null || r.pm_bid === 0) ? null : Number(r.pm_bid),
+    pmAsk: (r.pm_ask == null || r.pm_ask === 0) ? null : Number(r.pm_ask),
     clBinSpread: Number(r.cl_bin_spread || 0),
     bucketLeft: Number(r.bucket_seconds_left || 0),
     ingestLag: Number(r.ingest_lag_ms || 0),
