@@ -737,14 +737,11 @@ function renderServiceDetail() {
   const currentUpOrderbookPrice =
     orderbook && orderbook.yes
       ? (
-          Number.isFinite(Number(orderbook.yes.best_bid)) &&
           Number.isFinite(Number(orderbook.yes.best_ask))
-            ? (Number(orderbook.yes.best_bid) + Number(orderbook.yes.best_ask)) / 2
-            : Number.isFinite(Number(orderbook.yes.best_ask))
-              ? Number(orderbook.yes.best_ask)
-              : Number.isFinite(Number(orderbook.yes.best_bid))
-                ? Number(orderbook.yes.best_bid)
-                : null
+            ? Number(orderbook.yes.best_ask)
+            : Number.isFinite(Number(orderbook.yes.best_bid))
+              ? Number(orderbook.yes.best_bid)
+              : null
         )
       : null;
   const chartEl = document.getElementById("service-signal-chart");
