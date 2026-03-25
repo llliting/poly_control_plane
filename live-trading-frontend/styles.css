@@ -282,6 +282,7 @@ table.dense tr:hover td {
   display: grid;
   grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.7rem;
+  align-items: start;
 }
 
 .svc-selector-card select {
@@ -290,6 +291,18 @@ table.dense tr:hover td {
 
 .split-ob-chart {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  align-items: stretch;
+}
+
+.split-ob-chart .mini-chart {
+  height: auto;
+  flex: 1;
+  min-height: 8rem;
+}
+
+.split-ob-chart > .card {
+  display: flex;
+  flex-direction: column;
 }
 
 .mini-grid {
@@ -642,6 +655,9 @@ table.ob-table td.ask-cell {
   }
   .split-ob-chart {
     grid-template-columns: 1fr;
+  }
+  .split-ob-chart .mini-chart {
+    min-height: 5.5rem;
   }
   .ob-panels {
     grid-template-columns: 1fr;
