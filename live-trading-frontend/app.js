@@ -807,6 +807,7 @@ function renderServiceDetail() {
 
   const decisions = state.decisionsByService[s.name] || [];
   const dtbody = document.querySelector("#service-decisions tbody");
+  if (!dtbody) return;
   if (decisions.length === 0) {
     dtbody.innerHTML =
       '<tr><td colspan="13" style="text-align:center;color:var(--text-dim)">no decisions</td></tr>';
@@ -1205,12 +1206,7 @@ function wirePmPositionControls() {
 
 async function refreshPmPositions() {
   try {
-    const url = `${BASE}/polymarket-positions?status=all&limit=500&sort_by=current_value&sort_dir=desc`;
-    console.log("[refreshPmPositions] fetching:", url);
-    const resp = await fetch(url);
-    console.log("[refreshPmPositions] response status:", resp.status);
-    const data = await resp.json();
-    console.log("[refreshPmPositions] items count:", (data.items || []).length, "total:", data.total, "sample:", JSON.stringify((data.items || [])[0])?.slice(0, 200));
+    const data = await apiGet("/polymarket-positions", { status: "all", limit: 500, sort_by: "current_value", sort_dir: "desc" });
     state.pmPositions = data.items || [];
     renderPmPositions();
   } catch (err) {
