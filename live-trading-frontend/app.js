@@ -145,6 +145,24 @@ function formatNumberOrDash(value, decimals = 2) {
   return Number.isFinite(num) ? formatNumber(num, decimals) : "-";
 }
 
+function isContractPrice(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 && num <= 1;
+}
+
+function pickRuntimeUpPrice(row) {
+  if (!row) return null;
+  if (isContractPrice(row.pmMid)) return Number(row.pmMid);
+  if (isContractPrice(row.pmAsk)) return Number(row.pmAsk);
+  if (isContractPrice(row.pmBid)) return Number(row.pmBid);
+  return null;
+}
+
+function pickDecisionUpPrice(decision) {
+  if (!decision) return null;
+  return isContractPrice(decision.marketPrice) ? Number(decision.marketPrice) : null;
+}
+
 function asUiService(raw) {
   return {
     name: raw.service_key,
@@ -737,11 +755,11 @@ function renderServiceDetail() {
   const currentUpOrderbookPrice =
     orderbook && orderbook.yes
       ? (
-          orderbook.yes.mid != null && Number.isFinite(Number(orderbook.yes.mid)) && Number(orderbook.yes.mid) > 0
+          isContractPrice(orderbook.yes.mid)
             ? Number(orderbook.yes.mid)
-            : orderbook.yes.best_ask != null && Number.isFinite(Number(orderbook.yes.best_ask)) && Number(orderbook.yes.best_ask) > 0
+            : isContractPrice(orderbook.yes.best_ask)
               ? Number(orderbook.yes.best_ask)
-              : orderbook.yes.best_bid != null && Number.isFinite(Number(orderbook.yes.best_bid)) && Number(orderbook.yes.best_bid) > 0
+              : isContractPrice(orderbook.yes.best_bid)
                 ? Number(orderbook.yes.best_bid)
                 : null
         )
@@ -750,54 +768,44 @@ function renderServiceDetail() {
   const chartMetaEl = document.getElementById("service-signal-chart-meta");
   if (chartEl && chartMetaEl) {
     const decisions = state.decisionsByService[s.name] || [];
-    // Runtime signals may be empty (in-memory only, lost on restart) and
-    // pm_mid is always 0 from the Rust bot.  Fall back to decision data
-    // which has both p_up and market_price persisted in the DB.
     const hasMeaningfulRuntime = liveRows.some(
       (r) => Number.isFinite(r.pUp) && r.pUp !== 0,
     );
-    const hasMeaningfulPmMid = liveRows.some(
-      (r) => Number.isFinite(r.pmMid) && r.pmMid !== 0,
+    const orderedRuntime = [...liveRows].reverse();
+    const runtimePriceSeries = orderedRuntime.map((r, idx) => ({
+      label: r.ts,
+      value:
+        idx === orderedRuntime.length - 1 && isContractPrice(currentUpOrderbookPrice)
+          ? Number(currentUpOrderbookPrice)
+          : pickRuntimeUpPrice(r),
+    }));
+    const hasMeaningfulRuntimeUpPx = runtimePriceSeries.some(
+      (row) => Number.isFinite(row.value),
     );
+    const decisionPriceSeries = [...decisions].reverse().map((d) => ({
+      label: d.time,
+      value: pickDecisionUpPrice(d),
+    }));
     let pSeries, priceSeries;
-    if (hasMeaningfulRuntime && hasMeaningfulPmMid) {
-      // Ideal path: both series from runtime signals
-      const ordered = [...liveRows].reverse();
-      pSeries = ordered.map((r) => ({
+    if (hasMeaningfulRuntime && hasMeaningfulRuntimeUpPx) {
+      pSeries = orderedRuntime.map((r) => ({
         label: r.ts,
         value: Number.isFinite(r.pUp) ? r.pUp : null,
       }));
-      priceSeries = ordered.map((r, idx) => ({
-        label: r.ts,
-        value:
-          idx === ordered.length - 1 && Number.isFinite(currentUpOrderbookPrice)
-            ? currentUpOrderbookPrice
-            : Number.isFinite(r.pmMid) ? r.pmMid : null,
-      }));
+      priceSeries = runtimePriceSeries;
     } else if (hasMeaningfulRuntime) {
-      // Have p_up from runtime but no pm_mid; use market_price from decisions for price
-      const ordered = [...liveRows].reverse();
-      pSeries = ordered.map((r) => ({
+      pSeries = orderedRuntime.map((r) => ({
         label: r.ts,
         value: Number.isFinite(r.pUp) ? r.pUp : null,
       }));
-      // Build price series from decisions (each has market_price at decision time)
-      const decisionPrices = [...decisions].reverse();
-      priceSeries = decisionPrices.map((d) => ({
-        label: d.time,
-        value: Number.isFinite(d.marketPrice) ? d.marketPrice : null,
-      }));
+      priceSeries = decisionPriceSeries;
     } else if (decisions.length > 0) {
-      // No runtime signals; build both series from decision data
       const decOrdered = [...decisions].reverse();
       pSeries = decOrdered.map((d) => ({
         label: d.time,
         value: Number.isFinite(d.pUp) ? d.pUp : null,
       }));
-      priceSeries = decOrdered.map((d) => ({
-        label: d.time,
-        value: Number.isFinite(d.marketPrice) ? d.marketPrice : null,
-      }));
+      priceSeries = decisionPriceSeries;
     } else {
       pSeries = [];
       priceSeries = [];
@@ -825,10 +833,9 @@ function renderServiceDetail() {
   const decisions = state.decisionsByService[s.name] || [];
   const latestDecisionUpPrice =
     currentUpOrderbookPrice ??
-    liveRows.find((r) => Number.isFinite(r.pmMid) && r.pmMid !== 0)?.pmMid ??
-    liveRows.find((r) => Number.isFinite(r.pmAsk) && r.pmAsk !== 0)?.pmAsk ??
-    liveRows.find((r) => Number.isFinite(r.pmBid) && r.pmBid !== 0)?.pmBid ??
-    (decisions.length > 0 && Number.isFinite(decisions[0].marketPrice) ? decisions[0].marketPrice : null);
+    liveRows.map((r) => pickRuntimeUpPrice(r)).find((px) => Number.isFinite(px)) ??
+    decisions.map((d) => pickDecisionUpPrice(d)).find((px) => Number.isFinite(px)) ??
+    null;
   const dtbody = document.querySelector("#service-decisions tbody");
   dtbody.innerHTML = decisions
     .map(
@@ -860,7 +867,7 @@ function renderServiceDetail() {
       serviceLogBody.innerHTML = decisions
         .map((d) => {
           const upPrice = currentUpOrderbookPrice ??
-            (Number.isFinite(d.marketPrice) && d.marketPrice > 0 && d.marketPrice <= 1 ? d.marketPrice : null) ??
+            pickDecisionUpPrice(d) ??
             latestDecisionUpPrice;
           const binancePrice = d.binancePrice ?? latestRuntime.binance ?? null;
           const binanceChange5m = d.binanceChange5m ?? latestRuntime.binanceChange5m ?? null;
