@@ -866,9 +866,7 @@ function renderServiceDetail() {
     } else {
       serviceLogBody.innerHTML = decisions
         .map((d) => {
-          const upPrice = currentUpOrderbookPrice ??
-            pickDecisionUpPrice(d) ??
-            latestDecisionUpPrice;
+          const upPrice = d.upPrice ?? latestDecisionUpPrice;
           const binancePrice = d.binancePrice ?? latestRuntime.binance ?? null;
           const binanceChange5m = d.binanceChange5m ?? latestRuntime.binanceChange5m ?? null;
           const dangerAdx = d.dangerAdx ?? latestRuntime.dangerAdx ?? null;
@@ -1511,6 +1509,7 @@ async function refreshServiceDetailData() {
     traded: d.traded ? "yes" : "no",
     reason: d.no_trade_reason || "",
     marketPrice: d.market_price == null ? null : Number(d.market_price),
+    upPrice: isContractPrice(d.market_price) ? Number(d.market_price) : null,
     binancePrice: d.binance_price == null ? null : Number(d.binance_price),
     binanceChange5m: d.binance_price_change_5m == null ? null : Number(d.binance_price_change_5m),
     dangerAdx: d.danger_f_adx_3m == null ? null : Number(d.danger_f_adx_3m),
