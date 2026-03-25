@@ -186,30 +186,20 @@
         </section>
 
         <section class="page" id="page-services">
-          <div class="svc-top-row">
-            <article class="card svc-selector-card">
-              <div class="card-title">Service Selector</div>
-              <label class="selector-row" for="service-select">
-                <span class="selector-label">Choose service</span>
-                <select id="service-select"></select>
-              </label>
-              <div class="service-actions">
-                <button id="service-build-btn" type="button" class="tiny-btn">Build</button>
-                <button id="service-start-btn" type="button" class="tiny-btn">Start</button>
-                <button id="service-stop-btn" type="button" class="tiny-btn">Stop</button>
-                <span id="service-run-state" class="chip">status: -</span>
-                <span id="service-action-status" class="chip">action: idle</span>
-              </div>
-            </article>
-            <article class="card compact-kv-card">
-              <div class="card-title">Selected Service</div>
-              <div class="kv-grid" id="service-kv"></div>
-            </article>
-            <article class="card compact-kv-card">
-              <div class="card-title">Health</div>
-              <div class="kv-grid" id="health-kv"></div>
-            </article>
-          </div>
+          <article class="card svc-selector-card">
+            <div class="card-title">Service Selector</div>
+            <label class="selector-row" for="service-select">
+              <span class="selector-label">Choose service</span>
+              <select id="service-select"></select>
+            </label>
+            <div class="service-actions">
+              <button id="service-build-btn" type="button" class="tiny-btn">Build</button>
+              <button id="service-start-btn" type="button" class="tiny-btn">Start</button>
+              <button id="service-stop-btn" type="button" class="tiny-btn">Stop</button>
+              <span id="service-run-state" class="chip">status: -</span>
+              <span id="service-action-status" class="chip">action: idle</span>
+            </div>
+          </article>
 
           <div class="split split-ob-chart">
             <article class="card">

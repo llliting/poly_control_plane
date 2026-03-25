@@ -719,37 +719,7 @@ function renderServiceControls() {
 function renderServiceDetail() {
   const s = getService();
   if (!s) return;
-  const health = state.serviceHealthByKey[s.name] || {};
   const orderbook = state.orderbook;
-
-  const serviceKv = document.getElementById("service-kv");
-  serviceKv.innerHTML = [
-    ["service", s.name],
-    ["runner", s.runner],
-    ["asset", s.asset],
-    ["status", s.status],
-    ["active strategy", s.strategy || "-"],
-    ["model threshold", Number(s.threshold || 0).toFixed(2)],
-    ["edge min / max", `${Number(s.edgeFloor || 0).toFixed(2)} / ${Number(s.edgeCeiling || 0).toFixed(2)}`],
-    ["branch", s.branch || "-"],
-    ["commit", s.commit || "-"],
-  ]
-    .map(([k, v]) => `<div class="k">${k}</div><div>${v}</div>`)
-    .join("");
-
-  const healthKv = document.getElementById("health-kv");
-  healthKv.innerHTML = [
-    ["ready", String(Boolean(health.ready))],
-    ["binance connected", String(Boolean(health.binance_connected))],
-    ["okx connected", String(Boolean(health.okx_connected))],
-    ["rtds connected", String(Boolean(health.rtds_connected))],
-    ["last event age", `${Number(health.last_event_age_ms || 0)} ms`],
-    ["trade retries 10m", String(health.trade_retries_10m || 0)],
-    ["portfolio", `$${formatNumber(s.portfolio || 0)}`],
-    ["claimable", `$${formatNumber(health.claimable_usdc || 0)}`],
-  ]
-    .map(([k, v]) => `<div class="k">${k}</div><div>${v}</div>`)
-    .join("");
 
   const liveRows = state.liveRowsByService[s.name] || [];
   const currentUpOrderbookPrice =
