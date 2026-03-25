@@ -278,15 +278,18 @@ table.dense tr:hover td {
   grid-template-columns: minmax(0, 0.88fr) minmax(0, 0.88fr) minmax(0, 1.24fr);
 }
 
-.split-meta-ob {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+.svc-top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.7rem;
 }
 
-.meta-stack,
-.ob-chart-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
+.svc-selector-card select {
+  min-width: 9rem;
+}
+
+.split-ob-chart {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
 }
 
 .mini-grid {
@@ -634,7 +637,10 @@ table.ob-table td.ask-cell {
   .split-decisions-ob {
     grid-template-columns: 1fr;
   }
-  .split-meta-ob {
+  .svc-top-row {
+    grid-template-columns: 1fr;
+  }
+  .split-ob-chart {
     grid-template-columns: 1fr;
   }
   .ob-panels {
