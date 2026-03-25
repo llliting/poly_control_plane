@@ -1598,7 +1598,7 @@ state.miPlaceBusy = false;
 
 async function refreshMiTradingStatus() {
   try {
-    const data = await apiGet("/trading/status");
+    const data = await apiGet("/trading/status").catch(() => ({ enabled: false }));
     state.miTradingEnabled = Boolean(data.enabled);
   } catch (_err) {
     state.miTradingEnabled = false;
@@ -1607,7 +1607,7 @@ async function refreshMiTradingStatus() {
 
 async function refreshMiPositions() {
   try {
-    const data = await apiGet("/polymarket-positions", { status: "open", limit: 200, sort_by: "current_value", sort_dir: "desc" });
+    const data = await apiGet("/polymarket-positions", { status: "open", limit: 200, sort_by: "current_value", sort_dir: "desc" }).catch(() => ({ items: [] }));
     state.miPositions = data.items || [];
   } catch (_err) {
     state.miPositions = [];
@@ -1788,9 +1788,10 @@ async function initialLoad() {
     refreshPmPositions(),
     refreshLogs(),
     refreshMarket(),
-    refreshMiTradingStatus(),
-    refreshMiPositions(),
   ]);
+  // Non-critical — don't let these block or break initial load
+  refreshMiTradingStatus().catch(() => {});
+  refreshMiPositions().catch(() => {});
 }
 
 async function init() {
