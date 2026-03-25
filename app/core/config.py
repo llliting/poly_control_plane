@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     bot_cmd_map_json: str | None = None
     polymarket_data_host: str = "https://data-api.polymarket.com"
     polymarket_overview_wallet: str | None = None
+    polymarket_private_key: str | None = None
+    polymarket_chain_id: int = 137
+    polymarket_funder: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

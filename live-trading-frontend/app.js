@@ -1588,6 +1588,113 @@ function wireNav() {
   setActivePage(state.activePage, { preserveScroll: false });
 }
 
+// ---------------------------------------------------------------------------
+// Market Interaction
+// ---------------------------------------------------------------------------
+
+state.miPositions = [];
+state.miTradingEnabled = false;
+state.miPlaceBusy = false;
+
+async function refreshMiTradingStatus() {
+  try {
+    const data = await apiGet("/trading/status");
+    state.miTradingEnabled = Boolean(data.enabled);
+  } catch (_err) {
+    state.miTradingEnabled = false;
+  }
+}
+
+async function refreshMiPositions() {
+  try {
+    const data = await apiGet("/polymarket-positions", { status: "open", limit: 200, sort_by: "current_value", sort_dir: "desc" });
+    state.miPositions = data.items || [];
+  } catch (_err) {
+    state.miPositions = [];
+  }
+}
+
+function renderMiPositions() {
+  const tbody = document.querySelector("#mi-positions-table tbody");
+  if (!tbody) return;
+  if (state.miPositions.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim)">no open positions</td></tr>';
+    return;
+  }
+  tbody.innerHTML = state.miPositions
+    .map((p) => {
+      const pnl = Number(p.unrealized_pnl || 0);
+      const pnlCls = pnl >= 0 ? "pos" : "warn";
+      const tokenId = p.token_id || p.condition_id || "";
+      const canClose = state.miTradingEnabled && tokenId && Number(p.size || 0) > 0;
+      return `
+        <tr>
+          <td title="${p.slug || ""}">${p.title || p.slug || "-"}</td>
+          <td>${p.outcome || "-"}</td>
+          <td>${Number(p.size || 0).toFixed(2)}</td>
+          <td>${Number(p.avg_price || 0).toFixed(4)}</td>
+          <td>$${formatNumber(p.current_value || 0)}</td>
+          <td class="${pnlCls}">${pnl >= 0 ? "+" : ""}$${formatNumber(pnl)}</td>
+          <td>${canClose ? `<button class="tiny-btn mi-close-btn" data-token="${tokenId}" data-size="${p.size}" data-price="${p.avg_price}">Close</button>` : ""}</td>
+        </tr>`;
+    })
+    .join("");
+
+  tbody.querySelectorAll(".mi-close-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tokenId = btn.dataset.token;
+      const size = Number(btn.dataset.size);
+      const price = Number(btn.dataset.price);
+      if (!tokenId || !size) return;
+      btn.disabled = true;
+      btn.textContent = "Closing...";
+      try {
+        await apiPost("/trading/close-position", { token_id: tokenId, size, price });
+        btn.textContent = "Sent";
+        setTimeout(() => refreshMiPositions().then(renderMiPositions), 2000);
+      } catch (err) {
+        btn.textContent = "Failed";
+        console.error("close position failed", err);
+      }
+    });
+  });
+}
+
+function wireMiPlaceOrder() {
+  const placeBtn = document.getElementById("mi-place-btn");
+  const statusEl = document.getElementById("mi-place-status");
+  if (!placeBtn) return;
+
+  placeBtn.onclick = async () => {
+    const tokenId = (document.getElementById("mi-token-id")?.value || "").trim();
+    const side = document.getElementById("mi-side")?.value || "BUY";
+    const price = parseFloat(document.getElementById("mi-price")?.value);
+    const size = parseFloat(document.getElementById("mi-size")?.value);
+
+    if (!tokenId) { statusEl.textContent = "need token ID"; statusEl.className = "chip bad"; return; }
+    if (!Number.isFinite(price) || price <= 0 || price >= 1) { statusEl.textContent = "price 0-1"; statusEl.className = "chip bad"; return; }
+    if (!Number.isFinite(size) || size <= 0) { statusEl.textContent = "need size"; statusEl.className = "chip bad"; return; }
+
+    state.miPlaceBusy = true;
+    placeBtn.disabled = true;
+    statusEl.textContent = "placing...";
+    statusEl.className = "chip warn";
+
+    try {
+      const result = await apiPost("/trading/place-order", { token_id: tokenId, side, price, size });
+      statusEl.textContent = "order placed";
+      statusEl.className = "chip ok";
+    } catch (err) {
+      statusEl.textContent = `failed: ${err.message}`;
+      statusEl.className = "chip bad";
+      console.error("place order failed", err);
+    } finally {
+      state.miPlaceBusy = false;
+      placeBtn.disabled = false;
+    }
+  };
+}
+
 function wireServiceActions() {
   const buildBtn = document.getElementById("service-build-btn");
   const startBtn = document.getElementById("service-start-btn");
@@ -1632,6 +1739,7 @@ function renderAll() {
   wirePmPositionControls();
   renderOverview();
   renderServiceDetail();
+  renderMiPositions();
   renderTrades();
   renderPmTrades();
   renderPmPositions();
@@ -1641,7 +1749,10 @@ function renderAll() {
 
 async function refreshActivePage() {
   if (state.activePage === "overview") await refreshOverviewData();
-  if (state.activePage === "services") await refreshServiceDetailData();
+  if (state.activePage === "services") {
+    await refreshServiceDetailData();
+    await refreshMiPositions();
+  }
   if (state.activePage === "monitor") {
     await Promise.all([refreshMarket(), refreshServiceDetailData()]);
   }
@@ -1677,6 +1788,8 @@ async function initialLoad() {
     refreshPmPositions(),
     refreshLogs(),
     refreshMarket(),
+    refreshMiTradingStatus(),
+    refreshMiPositions(),
   ]);
 }
 
@@ -1684,6 +1797,7 @@ async function init() {
   restorePrefs();
   wireNav();
   wireServiceActions();
+  wireMiPlaceOrder();
   window.addEventListener("scroll", scheduleScrollSave, { passive: true });
   const content = document.querySelector(".content");
   if (content) content.addEventListener("scroll", scheduleScrollSave, { passive: true });

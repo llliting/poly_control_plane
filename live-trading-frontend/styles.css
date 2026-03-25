@@ -528,6 +528,49 @@ table.dense th.sortable.active {
   overflow-wrap: anywhere;
 }
 
+.mi-section {
+  margin-top: 0.5rem;
+}
+
+.mi-section-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.04em;
+}
+
+.mi-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.mi-form input[type="text"],
+.mi-form input[type="number"] {
+  background: #1e2327;
+  color: var(--text-main);
+  border: 1px solid #59656f;
+  border-radius: 0.4rem;
+  padding: 0.26rem 0.36rem;
+  font-size: 0.72rem;
+}
+
+.mi-form input[type="text"] {
+  min-width: 18rem;
+}
+
+.mi-form input[type="number"] {
+  width: 5.5rem;
+}
+
+.mi-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .log-view {
   min-height: 20rem;
   max-height: 29rem;

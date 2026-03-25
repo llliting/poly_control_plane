@@ -260,6 +260,59 @@
             </div>
           </article>
 
+          <article class="card" id="market-interaction-card">
+            <div class="card-title">Market Interaction</div>
+
+            <div class="mi-section">
+              <div class="mi-section-title">Open Positions</div>
+              <div class="table-wrap table-wrap-fixed-5">
+                <table class="dense" id="mi-positions-table">
+                  <thead>
+                    <tr>
+                      <th>Market</th>
+                      <th>Outcome</th>
+                      <th>Size</th>
+                      <th>Avg Price</th>
+                      <th>Value</th>
+                      <th>PnL</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="mi-section">
+              <div class="mi-section-title">Place Limit Order</div>
+              <div class="mi-form">
+                <label class="selector-row">
+                  <span class="selector-label">Token ID</span>
+                  <input id="mi-token-id" type="text" placeholder="paste token ID or pick from orderbook" />
+                </label>
+                <label class="selector-row">
+                  <span class="selector-label">Side</span>
+                  <select id="mi-side">
+                    <option value="BUY">Buy</option>
+                    <option value="SELL">Sell</option>
+                  </select>
+                </label>
+                <label class="selector-row">
+                  <span class="selector-label">Price</span>
+                  <input id="mi-price" type="number" step="0.01" min="0.01" max="0.99" placeholder="0.50" />
+                </label>
+                <label class="selector-row">
+                  <span class="selector-label">Size</span>
+                  <input id="mi-size" type="number" step="1" min="1" placeholder="10" />
+                </label>
+                <div class="mi-form-actions">
+                  <button id="mi-place-btn" type="button" class="tiny-btn">Place Order</button>
+                  <span id="mi-place-status" class="chip">idle</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
         </section>
 
         <section class="page" id="page-monitor">

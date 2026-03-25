@@ -111,6 +111,7 @@ def _build_position_row(raw: dict) -> dict:
     outcome = raw.get("outcome") or ""
     end_date = market.get("endDate") or market.get("end_date_iso") or ""
     condition_id = raw.get("conditionId") or raw.get("condition_id") or ""
+    token_id = raw.get("tokenId") or raw.get("token_id") or raw.get("assetId") or ""
 
     return {
         "title": title,
@@ -118,6 +119,7 @@ def _build_position_row(raw: dict) -> dict:
         "outcome": outcome,
         "asset": asset,
         "condition_id": condition_id,
+        "token_id": token_id,
         "size": size,
         "avg_price": avg_price,
         "current_value": current_value,
