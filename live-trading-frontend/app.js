@@ -816,10 +816,15 @@ function renderServiceDetail() {
     // Show latest p_up and UP px numbers next to chart meta label
     const lastPUp = [...pSeries].reverse().find((r) => Number.isFinite(r.value));
     const lastUpPx = [...priceSeries].reverse().find((r) => Number.isFinite(r.value));
+    const lastDiff = (lastPUp && lastUpPx) ? lastPUp.value - lastUpPx.value : null;
+    const diffStr = lastDiff != null ? `${lastDiff >= 0 ? "+" : ""}${lastDiff.toFixed(3)}` : "-";
+    const diffColor = lastDiff != null ? (lastDiff >= 0 ? "#3ddc97" : "#ffd166") : "#8b949e";
     chartMetaEl.innerHTML =
       `<span style="color:#7cc6fe">p_up: <b>${lastPUp ? Number(lastPUp.value).toFixed(3) : "-"}</b></span>` +
       ` &nbsp; ` +
-      `<span style="color:#3ddc97">UP px: <b>${lastUpPx ? Number(lastUpPx.value).toFixed(3) : "-"}</b></span>`;
+      `<span style="color:#3ddc97">UP px: <b>${lastUpPx ? Number(lastUpPx.value).toFixed(3) : "-"}</b></span>` +
+      ` &nbsp; ` +
+      `<span style="color:${diffColor}">diff: <b>${diffStr}</b></span>`;
     chartEl.innerHTML = hasData
       ? dualSparklineSvg(pSeries, priceSeries, {
           min: 0,
@@ -831,66 +836,42 @@ function renderServiceDetail() {
   }
 
   const decisions = state.decisionsByService[s.name] || [];
-  const latestDecisionUpPrice =
-    currentUpOrderbookPrice ??
-    liveRows.map((r) => pickRuntimeUpPrice(r)).find((px) => Number.isFinite(px)) ??
-    decisions.map((d) => pickDecisionUpPrice(d)).find((px) => Number.isFinite(px)) ??
-    null;
   const dtbody = document.querySelector("#service-decisions tbody");
-  dtbody.innerHTML = decisions
-    .map(
-      (d) => `
-      <tr>
-        <td>${d.time}</td>
-        <td>${d.side}</td>
-        <td>${Number(d.pUp || 0).toFixed(3)}</td>
-        <td>${formatFixedOrDash(d.upPrice ?? latestDecisionUpPrice, 3)}</td>
-        <td>${Number(d.th || 0).toFixed(2)}</td>
-        <td>${Number(d.edge || 0).toFixed(3)}</td>
-        <td>${d.streak}</td>
-        <td>${d.traded}</td>
-        <td>${d.reason || "-"}</td>
-      </tr>
-    `,
-    )
-    .join("");
+  if (decisions.length === 0) {
+    dtbody.innerHTML =
+      '<tr><td colspan="13" style="text-align:center;color:var(--text-dim)">no decisions</td></tr>';
+  } else {
+    dtbody.innerHTML = decisions
+      .map(
+        (d) => {
+          const diff = (Number.isFinite(d.pUp) && Number.isFinite(d.upPrice))
+            ? d.pUp - d.upPrice
+            : null;
+          const diffStr = diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(3)}` : "-";
+          const diffCls = diff != null ? (diff >= 0 ? "pos" : "warn") : "";
+          return `
+          <tr>
+            <td>${d.time}</td>
+            <td>${d.market || "-"}</td>
+            <td>${d.side}</td>
+            <td>${Number(d.pUp || 0).toFixed(3)}</td>
+            <td>${formatFixedOrDash(d.upPrice, 3)}</td>
+            <td>${formatNumberOrDash(d.binancePrice, 2)}</td>
+            <td>${d.binanceChange5m == null ? "-" : `${Number(d.binanceChange5m) >= 0 ? "+" : ""}${formatNumber(d.binanceChange5m, 2)}`}</td>
+            <td>${Number(d.th || 0).toFixed(2)}</td>
+            <td>${Number(d.edge || 0).toFixed(3)}</td>
+            <td class="${diffCls}">${diffStr}</td>
+            <td>${d.streak}</td>
+            <td>${d.traded}</td>
+            <td>${d.reason || "-"}</td>
+          </tr>
+        `;
+        },
+      )
+      .join("");
+  }
 
   renderOrderbook();
-
-  const latestRuntime = state.latestRuntimeByService[s.name] || {};
-  const serviceLogBody = document.querySelector("#service-logs tbody");
-  if (serviceLogBody) {
-    if (decisions.length === 0) {
-      serviceLogBody.innerHTML =
-        '<tr><td colspan="11" style="text-align:center;color:var(--text-dim)">no logs</td></tr>';
-    } else {
-      serviceLogBody.innerHTML = decisions
-        .map((d) => {
-          const upPrice = d.upPrice ?? latestDecisionUpPrice;
-          const binancePrice = d.binancePrice ?? latestRuntime.binance ?? null;
-          const binanceChange5m = d.binanceChange5m ?? latestRuntime.binanceChange5m ?? null;
-          const dangerAdx = d.dangerAdx ?? latestRuntime.dangerAdx ?? null;
-          const dangerSpread = d.dangerSpread ?? latestRuntime.dangerSpread ?? null;
-          const dangerEr = d.dangerEr ?? latestRuntime.dangerEr ?? null;
-          return `
-            <tr>
-              <td>${d.market || "-"}</td>
-              <td>${d.time}</td>
-              <td>${formatFixedOrDash(d.pUp, 4)}</td>
-              <td>${formatFixedOrDash(upPrice, 3)}</td>
-              <td>${d.side}</td>
-              <td>${formatNumberOrDash(d.marketPrice, 2)}</td>
-              <td>${formatNumberOrDash(binancePrice, 2)}</td>
-              <td>${binanceChange5m == null ? "-" : `${Number(binanceChange5m) >= 0 ? "+" : ""}${formatNumber(binanceChange5m, 2)}`}</td>
-              <td>${formatFixedOrDash(dangerAdx, 4)}</td>
-              <td>${formatFixedOrDash(dangerSpread, 4)}</td>
-              <td>${formatFixedOrDash(dangerEr, 4)}</td>
-            </tr>
-          `;
-        })
-        .join("");
-    }
-  }
 
   renderServiceControls();
 }
@@ -1433,6 +1414,22 @@ function dualSparklineSvg(seriesA, seriesB, opts = {}) {
       return `<circle cx="${cx}" cy="${cy}" r="2.9" fill="${colorB}" fill-opacity="0.45"><title>${tip}</title></circle>`;
     })
     .join("");
+  // Diff bars (p_up - UP price) drawn from the 0.5 baseline
+  const barW = Math.max(2, (w / Math.max(rows.length, 1)) * 0.5);
+  const midY = padT + h - ((0.5 - min) / range) * h;
+  const diffBars = rows
+    .map((row, idx) => {
+      if (!Number.isFinite(row.a) || !Number.isFinite(row.b)) return "";
+      const diff = row.a - row.b;
+      const x = padL + (idx / Math.max(rows.length - 1, 1)) * w - barW / 2;
+      const diffY = padT + h - ((Math.min(max, Math.max(min, 0.5 + diff)) - min) / range) * h;
+      const barTop = Math.min(midY, diffY);
+      const barH = Math.max(Math.abs(midY - diffY), 0.5);
+      const barColor = diff >= 0 ? "#3ddc97" : "#ffd166";
+      const tip = escapeXml(`${row.label}: diff ${diff >= 0 ? "+" : ""}${diff.toFixed(3)}`);
+      return `<rect x="${x.toFixed(2)}" y="${barTop.toFixed(2)}" width="${barW.toFixed(2)}" height="${barH.toFixed(2)}" fill="${barColor}" fill-opacity="0.35"><title>${tip}</title></rect>`;
+    })
+    .join("");
   // Grid lines (0.25, 0.50, 0.75)
   const grid = [0.25, 0.5, 0.75]
     .map((ratio) => {
@@ -1451,6 +1448,7 @@ function dualSparklineSvg(seriesA, seriesB, opts = {}) {
     <svg viewBox="0 0 ${totalW} ${totalH}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
       ${grid}
       ${axisLabels}
+      ${diffBars}
       <polyline fill="none" stroke="${colorA}" stroke-width="2.2" points="${polylineA}" />
       <polyline fill="none" stroke="${colorB}" stroke-width="2.2" points="${polylineB}" />
       ${circlesA}
