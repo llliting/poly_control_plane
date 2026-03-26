@@ -90,6 +90,7 @@ const state = {
   serviceActionActionId: null,
   serviceActionPollTimer: null,
   orderbook: null,
+  binanceData: null,
 };
 
 let scrollSaveTimer = null;
@@ -788,11 +789,11 @@ function renderServiceDetail() {
     const lastUpPx = [...priceSeries].reverse().find((r) => Number.isFinite(r.value));
     const lastDiff = (lastPUp && lastUpPx) ? lastPUp.value - lastUpPx.value : null;
     const diffStr = lastDiff != null ? `${lastDiff >= 0 ? "+" : ""}${lastDiff.toFixed(3)}` : "-";
-    const diffColor = lastDiff != null ? (lastDiff >= 0 ? "#3ddc97" : "#ffd166") : "#8b949e";
+    const diffColor = lastDiff != null ? (lastDiff >= 0 ? "#7cc6fe" : "#ffd166") : "#8b949e";
     chartMetaEl.innerHTML =
       `<span style="color:#7cc6fe">p_up: <b>${lastPUp ? Number(lastPUp.value).toFixed(3) : "-"}</b></span>` +
       ` &nbsp; ` +
-      `<span style="color:#3ddc97">UP px: <b>${lastUpPx ? Number(lastUpPx.value).toFixed(3) : "-"}</b></span>` +
+      `<span style="color:#ffd166">UP px: <b>${lastUpPx ? Number(lastUpPx.value).toFixed(3) : "-"}</b></span>` +
       ` &nbsp; ` +
       `<span style="color:${diffColor}">diff: <b>${diffStr}</b></span>`;
     chartEl.innerHTML = hasData
@@ -800,7 +801,7 @@ function renderServiceDetail() {
           min: 0,
           max: 1,
           colorA: "#7cc6fe",
-          colorB: "#3ddc97",
+          colorB: "#ffd166",
         })
       : '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:0.7rem">no live signal data</div>';
   }
@@ -1350,7 +1351,7 @@ function dualSparklineSvg(seriesA, seriesB, opts = {}) {
   const max = typeof opts.max === "number" ? opts.max : 1;
   const range = Math.max(max - min, 0.0001);
   const colorA = opts.colorA || "#7cc6fe";
-  const colorB = opts.colorB || "#3ddc97";
+  const colorB = opts.colorB || "#ffd166";
   const toPoint = (value, idx) => {
     const x = padL + (idx / Math.max(rows.length - 1, 1)) * w;
     const y = padT + h - ((Math.min(max, Math.max(min, Number(value))) - min) / range) * h;
@@ -1391,7 +1392,7 @@ function dualSparklineSvg(seriesA, seriesB, opts = {}) {
       const diffY = padT + h - ((Math.min(max, Math.max(min, 0.5 + diff)) - min) / range) * h;
       const barTop = Math.min(midY, diffY);
       const barH = Math.max(Math.abs(midY - diffY), 0.5);
-      const barColor = diff >= 0 ? "#3ddc97" : "#ffd166";
+      const barColor = diff >= 0 ? colorA : colorB;
       const tip = escapeXml(`${row.label}: diff ${diff >= 0 ? "+" : ""}${diff.toFixed(3)}`);
       return `<rect x="${x.toFixed(2)}" y="${barTop.toFixed(2)}" width="${barW.toFixed(2)}" height="${barH.toFixed(2)}" fill="${barColor}" fill-opacity="0.35"><title>${tip}</title></rect>`;
     })
@@ -1447,13 +1448,15 @@ async function refreshServiceDetailData() {
   const key = state.selectedService;
   const svc = state.services.find((s) => s.name === key);
   const obAsset = (svc && svc.asset) ? svc.asset : (key.startsWith("eth") ? "ETH" : "BTC");
-  const [detail, decisions, runtime, orderbook] = await Promise.all([
+  const [detail, decisions, runtime, orderbook, binanceData] = await Promise.all([
     apiGet(`/services/${key}`).catch(() => null),
     apiGet(`/services/${key}/decisions`, { limit: 50 }).catch(() => ({ items: [] })),
     apiGet(`/services/${key}/runtime-signals`, { limit: 50 }).catch(() => ({ items: [] })),
     apiGet("/market/orderbook", { asset: obAsset }).catch(() => null),
+    apiGet("/market/binance-price", { asset: obAsset }).catch(() => null),
   ]);
   state.orderbook = orderbook;
+  state.binanceData = binanceData;
 
   if (detail && detail.service) {
     const s = asUiService(detail.service);
@@ -1480,6 +1483,49 @@ async function refreshServiceDetailData() {
     dangerSpread: d.danger_f_spread_3m == null ? null : Number(d.danger_f_spread_3m),
     dangerEr: d.danger_f_er_3m == null ? null : Number(d.danger_f_er_3m),
   }));
+
+  // Enrich decision rows with live orderbook UP price and Binance data
+  const liveUpPrice =
+    orderbook && orderbook.yes
+      ? (
+          isContractPrice(orderbook.yes.mid)
+            ? Number(orderbook.yes.mid)
+            : isContractPrice(orderbook.yes.best_ask)
+              ? Number(orderbook.yes.best_ask)
+              : isContractPrice(orderbook.yes.best_bid)
+                ? Number(orderbook.yes.best_bid)
+                : null
+        )
+      : null;
+  const liveBinancePrice = binanceData && binanceData.price != null ? Number(binanceData.price) : null;
+  const liveBinanceChange5m = binanceData && binanceData.change_5m != null ? Number(binanceData.change_5m) : null;
+
+  // For each decision row, fill in missing fields with live data.
+  // Most recent row (index 0) always gets live data; older rows only get
+  // filled if they have no data (carry forward most recent known value).
+  const decRows = state.decisionsByService[key];
+  let lastKnownUp = liveUpPrice;
+  let lastKnownBinance = liveBinancePrice;
+  let lastKnownBinChg = liveBinanceChange5m;
+  for (let i = 0; i < decRows.length; i++) {
+    const d = decRows[i];
+    if (i === 0) {
+      // Most recent row: always overlay live data
+      if (liveUpPrice != null) d.upPrice = liveUpPrice;
+      if (liveBinancePrice != null) d.binancePrice = liveBinancePrice;
+      if (liveBinanceChange5m != null) d.binanceChange5m = liveBinanceChange5m;
+    } else {
+      // Older rows: fill only if missing, using carry-forward
+      if (d.upPrice == null && lastKnownUp != null) d.upPrice = lastKnownUp;
+      if (d.binancePrice == null && lastKnownBinance != null) d.binancePrice = lastKnownBinance;
+      if (d.binanceChange5m == null && lastKnownBinChg != null) d.binanceChange5m = lastKnownBinChg;
+    }
+    // Update carry-forward values from this row
+    if (d.upPrice != null) lastKnownUp = d.upPrice;
+    if (d.binancePrice != null) lastKnownBinance = d.binancePrice;
+    if (d.binanceChange5m != null) lastKnownBinChg = d.binanceChange5m;
+  }
+
   const runtimeRows = (runtime.items || []).map((r) => ({
     ts: formatEtDateTime(r.ts),
     pUp: r.p_up == null ? null : Number(r.p_up),
