@@ -848,6 +848,29 @@ function renderServiceDetail() {
   renderServiceControls();
 }
 
+function computeOBI(book, topN) {
+  const bids = (book.bids || []).slice(0, topN);
+  const asks = (book.asks || []).slice(0, topN);
+  const bidVol = bids.reduce((s, b) => s + b.size, 0);
+  const askVol = asks.reduce((s, a) => s + a.size, 0);
+  const total = bidVol + askVol;
+  return total > 0 ? (bidVol - askVol) / total : null;
+}
+
+function renderOBI(elId, book) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const obi3 = computeOBI(book, 3);
+  const obi5 = computeOBI(book, 5);
+  const fmt = (v) => {
+    if (v == null) return "--";
+    const pct = (v * 100).toFixed(1);
+    const color = v > 0 ? "var(--ok)" : v < 0 ? "var(--bad)" : "var(--text-dim)";
+    return `<span style="color:${color}">${v > 0 ? "+" : ""}${pct}%</span>`;
+  };
+  el.innerHTML = `OBI(3): ${fmt(obi3)} &nbsp; OBI(5): ${fmt(obi5)}`;
+}
+
 function renderOrderbook() {
   const ob = state.orderbook;
   const slugEl = document.getElementById("ob-slug");
@@ -855,11 +878,15 @@ function renderOrderbook() {
   const noQuote = document.getElementById("ob-no-quote");
   const yesTbody = document.querySelector("#ob-yes-table tbody");
   const noTbody = document.querySelector("#ob-no-table tbody");
+  const yesObi = document.getElementById("ob-yes-obi");
+  const noObi = document.getElementById("ob-no-obi");
 
   if (!ob || ob.error || !ob.yes || !ob.no) {
     if (slugEl) slugEl.textContent = ob ? (ob.slug || "") : "";
     if (yesQuote) yesQuote.textContent = "--";
     if (noQuote) noQuote.textContent = "--";
+    if (yesObi) yesObi.innerHTML = "OBI(3): -- &nbsp; OBI(5): --";
+    if (noObi) noObi.innerHTML = "OBI(3): -- &nbsp; OBI(5): --";
     if (yesTbody) yesTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim)">no data</td></tr>';
     if (noTbody) noTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim)">no data</td></tr>';
     return;
@@ -903,6 +930,9 @@ function renderOrderbook() {
 
   if (yesTbody) renderBook(yesTbody, ob.yes);
   if (noTbody) renderBook(noTbody, ob.no);
+
+  renderOBI("ob-yes-obi", ob.yes);
+  renderOBI("ob-no-obi", ob.no);
 }
 
 function getTradeSortValue(trade, key) {

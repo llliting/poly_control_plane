@@ -645,6 +645,14 @@ table.dense th.sortable.active {
   background: #1b1f23;
 }
 
+.ob-obi {
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  padding: 0.15rem 0;
+}
+
 .ob-book-wrap {
   max-height: 7.5rem;
   overflow-y: auto;
