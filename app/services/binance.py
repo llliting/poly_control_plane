@@ -66,7 +66,8 @@ def get_binance_price(asset: str = "BTC") -> dict:
         cached = _price_cache.get(cache_key)
         if cached and now - cached[0] < _CACHE_TTL_SECS:
             price = cached[1]
-            return _build_response(cache_key, price, now)
+    if cached and now - cached[0] < _CACHE_TTL_SECS:
+        return _build_response(cache_key, price, now)
 
     # Fetch fresh price
     try:
