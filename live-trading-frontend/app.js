@@ -1765,6 +1765,21 @@ function renderLiquidityRewards() {
           (market.question || "").toLowerCase().includes(query),
       );
     if (!partial) {
+      try {
+        const remote = await apiGet("/liquidity-rewards/market", { slug: searchInput.value.trim() });
+        if (remote) {
+          const idx = state.lrMarkets.findIndex((market) => market.market_slug === remote.market_slug);
+          if (idx >= 0) state.lrMarkets[idx] = remote;
+          else state.lrMarkets.unshift(remote);
+          selectLiquidityRewardMarket(remote.market_slug);
+          savePrefs();
+          await refreshLiquidityRewardsDetail();
+          renderLiquidityRewards();
+          return;
+        }
+      } catch (_err) {
+        // no-op
+      }
       state.lrOrderStatus = "market not found";
       renderLiquidityRewards();
       return;
@@ -1949,7 +1964,9 @@ async function refreshLiquidityRewardsMarkets() {
     } else if (state.lrSelectedSlug) {
       state.lrSelectedMarket = findLrMarket(state.lrSelectedSlug);
     }
-    state.lrMarketStatus = `updated ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
+    state.lrMarketStatus = data.error
+      ? `upstream issue, loaded ${state.lrMarkets.length}`
+      : `updated ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
   } catch (err) {
     console.error("refresh liquidity reward markets failed", err);
     state.lrMarketStatus = "failed to load";
