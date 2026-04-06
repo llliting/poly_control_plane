@@ -69,16 +69,7 @@ CLOB_HOST = "https://clob.polymarket.com"
 GAMMA_HOST = "https://gamma-api.polymarket.com"
 
 
-def resolve_market(slug: str) -> dict:
-    """Resolve a market slug to its metadata via Gamma API."""
-    url = f"{GAMMA_HOST}/markets?slug={urllib.parse.quote(slug)}"
-    items = _get_json(url)
-    if not isinstance(items, list) or not items:
-        sys.exit(f"Market not found: {slug}")
-    match = next((m for m in items if m.get("slug") == slug), None)
-    if not match:
-        sys.exit(f"Market not found: {slug} (got {len(items)} results but no exact match)")
-
+def _parse_market_item(match: dict) -> dict:
     # Parse outcomes and token IDs
     outcomes = match.get("outcomes")
     prices = match.get("outcomePrices")
@@ -103,11 +94,106 @@ def resolve_market(slug: str) -> dict:
         tokens.append({"token_id": str(token_id), "outcome": str(outcome), "price": price})
 
     return {
-        "slug": slug,
-        "question": match.get("question") or match.get("title") or slug,
+        "slug": match.get("slug") or "",
+        "question": match.get("question") or match.get("title") or (match.get("slug") or ""),
         "condition_id": match.get("conditionId") or "",
         "tokens": tokens,
+        "sports_market_type": match.get("sportsMarketType"),
+        "group_item_title": match.get("groupItemTitle"),
+        "event_slug": None,
+        "event_title": None,
     }
+
+
+def _fetch_market_by_slug(slug: str) -> dict | None:
+    url = f"{GAMMA_HOST}/markets?slug={urllib.parse.quote(slug)}"
+    items = _get_json(url)
+    if not isinstance(items, list) or not items:
+        return None
+    match = next((m for m in items if m.get("slug") == slug), None)
+    if not match:
+        return None
+    market = _parse_market_item(match)
+    market["event_slug"] = slug
+    return market
+
+
+def _fetch_event_markets(slug: str) -> dict | None:
+    url = f"{GAMMA_HOST}/events?slug={urllib.parse.quote(slug)}"
+    items = _get_json(url)
+    if not isinstance(items, list) or not items:
+        return None
+    event = next((e for e in items if e.get("slug") == slug), None)
+    if not event:
+        return None
+
+    raw_markets = event.get("markets") or []
+    markets = []
+    for raw_market in raw_markets:
+        try:
+            market = _parse_market_item(raw_market)
+        except SystemExit:
+            continue
+        market["event_slug"] = slug
+        market["event_title"] = event.get("title") or slug
+        markets.append(market)
+
+    if not markets:
+        return None
+
+    return {
+        "slug": slug,
+        "title": event.get("title") or slug,
+        "markets": markets,
+    }
+
+
+def _choose_event_market(event_data: dict, selector: str | None) -> dict:
+    markets = event_data["markets"]
+    if selector:
+        selector = selector.strip().lower()
+        for market in markets:
+            candidates = [
+                market["slug"].lower(),
+                (market.get("sports_market_type") or "").lower(),
+                (market.get("group_item_title") or "").lower(),
+                market["slug"].split("-")[-1].lower(),
+            ]
+            if selector in [c for c in candidates if c]:
+                return market
+    if len(markets) == 1:
+        return markets[0]
+
+    choices = ", ".join(m["slug"].split("-")[-1] for m in markets)
+    if selector:
+        sys.exit(f"Submarket not found for {event_data['slug']}: {selector}. Choices: {choices}")
+    sys.exit(f"{event_data['slug']} is a sports event slug, not a single market. Use --market. Choices: {choices}")
+
+
+def resolve_market(slug: str, selector: str | None = None) -> dict:
+    """Resolve a market slug or sports event slug to market metadata via Gamma API."""
+    market = _fetch_market_by_slug(slug)
+    if market:
+        return market
+
+    event_data = _fetch_event_markets(slug)
+    if event_data:
+        return _choose_event_market(event_data, selector)
+
+    sys.exit(f"Market not found: {slug}")
+
+
+def resolve_market_group(slug: str) -> list[dict]:
+    """Resolve a market slug to one market, or an event slug to all of its markets."""
+    market = _fetch_market_by_slug(slug)
+    if market:
+        return [market]
+
+    event_data = _fetch_event_markets(slug)
+    if event_data:
+        return event_data["markets"]
+
+    sys.exit(f"Market not found: {slug}")
 
 
 # ---------------------------------------------------------------------------
@@ -137,35 +223,44 @@ def fetch_book(token_id: str) -> dict:
 
 
 def cmd_book(args):
-    market = resolve_market(args.slug)
-    print(f"\n  {market['question']}")
-    print(f"  slug: {market['slug']}")
-    print()
-
-    for token in market["tokens"]:
-        book = fetch_book(token["token_id"])
-        label = token["outcome"]
-        price_str = f" (last: {token['price']:.3f})" if token["price"] is not None else ""
-        print(f"  [{label}]{price_str}  bid {book['best_bid'] or '--'} / ask {book['best_ask'] or '--'}  spread {book['spread'] or '--'}  mid {book['mid'] or '--'}")
-        if book.get("min_order_size"):
-            print(f"    min_order_size: {book['min_order_size']}  min_tick_size: {book.get('min_tick_size')}")
-
-        # Print asks (reversed so lowest is closest to spread)
-        asks_display = list(reversed(book["asks"][:10]))
-        if asks_display:
-            print(f"    {'ASKS':>8}  {'Price':>8}  {'Size':>10}  {'Cumul':>10}")
-            cum = sum(a["size"] for a in asks_display)
-            for a in asks_display:
-                print(f"    {'':>8}  {a['price']:>8.3f}  {a['size']:>10.1f}  {cum:>10.1f}")
-                cum -= a["size"]
-        print(f"    {'---':>8}  {'---':>8}  {'---':>10}  {'---':>10}")
-        if book["bids"]:
-            print(f"    {'BIDS':>8}  {'Price':>8}  {'Size':>10}  {'Cumul':>10}")
-            cum = 0
-            for b in book["bids"][:10]:
-                cum += b["size"]
-                print(f"    {'':>8}  {b['price']:>8.3f}  {b['size']:>10.1f}  {cum:>10.1f}")
+    markets = [resolve_market(args.slug, args.market)] if args.market else resolve_market_group(args.slug)
+    if len(markets) > 1:
+        print(f"\n  Event: {args.slug}")
+        print(f"  Submarkets: {len(markets)}")
         print()
+
+    for idx, market in enumerate(markets):
+        print(f"  {market['question']}")
+        print(f"  slug: {market['slug']}")
+        print()
+
+        for token in market["tokens"]:
+            book = fetch_book(token["token_id"])
+            label = token["outcome"]
+            price_str = f" (last: {token['price']:.3f})" if token["price"] is not None else ""
+            print(f"  [{label}]{price_str}  bid {book['best_bid'] or '--'} / ask {book['best_ask'] or '--'}  spread {book['spread'] or '--'}  mid {book['mid'] or '--'}")
+            if book.get("min_order_size"):
+                print(f"    min_order_size: {book['min_order_size']}  min_tick_size: {book.get('min_tick_size')}")
+
+            # Print asks (reversed so lowest is closest to spread)
+            asks_display = list(reversed(book["asks"][:10]))
+            if asks_display:
+                print(f"    {'ASKS':>8}  {'Price':>8}  {'Size':>10}  {'Cumul':>10}")
+                cum = sum(a["size"] for a in asks_display)
+                for a in asks_display:
+                    print(f"    {'':>8}  {a['price']:>8.3f}  {a['size']:>10.1f}  {cum:>10.1f}")
+                    cum -= a["size"]
+            print(f"    {'---':>8}  {'---':>8}  {'---':>10}  {'---':>10}")
+            if book["bids"]:
+                print(f"    {'BIDS':>8}  {'Price':>8}  {'Size':>10}  {'Cumul':>10}")
+                cum = 0
+                for b in book["bids"][:10]:
+                    cum += b["size"]
+                    print(f"    {'':>8}  {b['price']:>8.3f}  {b['size']:>10.1f}  {cum:>10.1f}")
+            print()
+
+        if idx != len(markets) - 1:
+            print()
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +319,7 @@ def get_clob_client():
 # ---------------------------------------------------------------------------
 def cmd_order(args):
     side = args.command.upper()  # "buy" or "sell"
-    market = resolve_market(args.slug)
+    market = resolve_market(args.slug, args.market)
     outcome_idx = args.outcome
     if outcome_idx >= len(market["tokens"]):
         sys.exit(f"Outcome index {outcome_idx} out of range (market has {len(market['tokens'])} outcomes)")
@@ -277,7 +372,7 @@ def cmd_order(args):
 # Open orders
 # ---------------------------------------------------------------------------
 def cmd_orders(args):
-    market = resolve_market(args.slug)
+    market = resolve_market(args.slug, args.market)
     client = get_clob_client()
 
     token_ids = {t["token_id"] for t in market["tokens"]}
@@ -359,6 +454,7 @@ def main():
     # book
     p_book = sub.add_parser("book", help="Show orderbook for a market")
     p_book.add_argument("slug", help="Market slug")
+    p_book.add_argument("--market", help="Submarket for sports event slugs, e.g. draw or team code")
 
     # buy
     p_buy = sub.add_parser("buy", help="Place a BUY limit order")
@@ -366,6 +462,7 @@ def main():
     p_buy.add_argument("price", type=float, help="Limit price (0-1)")
     p_buy.add_argument("size", type=float, help="Number of shares")
     p_buy.add_argument("--outcome", type=int, default=0, help="Outcome index (0=first, 1=second)")
+    p_buy.add_argument("--market", help="Submarket for sports event slugs, e.g. draw or team code")
 
     # sell
     p_sell = sub.add_parser("sell", help="Place a SELL limit order")
@@ -373,10 +470,12 @@ def main():
     p_sell.add_argument("price", type=float, help="Limit price (0-1)")
     p_sell.add_argument("size", type=float, help="Number of shares")
     p_sell.add_argument("--outcome", type=int, default=0, help="Outcome index (0=first, 1=second)")
+    p_sell.add_argument("--market", help="Submarket for sports event slugs, e.g. draw or team code")
 
     # orders
     p_orders = sub.add_parser("orders", help="List open orders for a market")
     p_orders.add_argument("slug", help="Market slug")
+    p_orders.add_argument("--market", help="Submarket for sports event slugs, e.g. draw or team code")
 
     # cancel
     p_cancel = sub.add_parser("cancel", help="Cancel an order by ID")
