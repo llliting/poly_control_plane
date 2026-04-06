@@ -2071,12 +2071,16 @@ async function refreshLogs() {
 }
 
 async function refreshMarket() {
-  const [summary, tape] = await Promise.all([
-    apiGet("/market/summary", { asset: "BTC" }),
-    apiGet("/market/tape", { asset: "BTC", limit: 40 }),
-  ]);
-  state.marketSummary = summary;
-  state.marketTape = tape.items || [];
+  try {
+    const [summary, tape] = await Promise.all([
+      apiGet("/market/summary", { asset: "BTC" }),
+      apiGet("/market/tape", { asset: "BTC", limit: 40 }),
+    ]);
+    state.marketSummary = summary;
+    state.marketTape = tape.items || [];
+  } catch (err) {
+    console.error("refresh market failed", err);
+  }
 }
 
 function wireNav() {
@@ -2303,8 +2307,8 @@ function startPolling() {
 async function initialLoad() {
   await refreshServices();
   normalizeSelections();
-  await refreshTrades();
-  await Promise.all([
+  await refreshTrades().catch((err) => console.error("initial trades load failed", err));
+  await Promise.allSettled([
     refreshOverviewData(),
     refreshServiceDetailData(),
     refreshPmTrades(),
@@ -2313,7 +2317,7 @@ async function initialLoad() {
     refreshLogs(),
     refreshMarket(),
   ]);
-  await refreshLiquidityRewardsDetail();
+  await refreshLiquidityRewardsDetail().catch((err) => console.error("initial LR detail failed", err));
   // Non-critical — don't let these block or break initial load
   refreshMiTradingStatus().catch(() => {});
   refreshMiPositions().catch(() => {});

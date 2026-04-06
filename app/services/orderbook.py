@@ -162,6 +162,7 @@ def get_orderbook(asset: str = "BTC") -> dict:
             "no": None,
         }
 
+    yes_token, no_token = tokens
     result = get_orderbook_for_market(
         slug=slug,
         tokens=[

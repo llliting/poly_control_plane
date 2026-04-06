@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services import polymarket_trading
 from app.services.liquidity_rewards import get_market_by_slug, list_rewards_markets
 from app.services.orderbook import get_orderbook_for_market
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -32,7 +35,11 @@ def liquidity_rewards_orderbook(slug: str = Query(..., min_length=1)) -> dict:
     market = get_market_by_slug(slug)
     if not market:
         raise HTTPException(status_code=404, detail="market not found")
-    return get_orderbook_for_market(slug=market["market_slug"], tokens=market.get("tokens") or [])
+    try:
+        return get_orderbook_for_market(slug=market["market_slug"], tokens=market.get("tokens") or [])
+    except Exception:
+        logger.exception("liquidity rewards orderbook fetch failed for slug=%s", slug)
+        return {"slug": market["market_slug"], "books": [], "error": "fetch_failed"}
 
 
 @router.get("/liquidity-rewards/open-orders")

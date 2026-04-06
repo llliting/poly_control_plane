@@ -321,8 +321,14 @@ def _fetch_rewards_markets_via_current(
             if not isinstance(row, dict):
                 continue
             condition_id = str(row.get("condition_id") or "").strip()
-            detail = _fetch_market_rewards(condition_id) or row
-            gamma = _lookup_gamma_market(condition_id)
+            try:
+                detail = _fetch_market_rewards(condition_id) or row
+            except Exception:
+                detail = row
+            try:
+                gamma = _lookup_gamma_market(condition_id)
+            except Exception:
+                gamma = None
             item = _merge_with_gamma(detail, gamma)
             items.append(_normalize_market(item))
         next_cursor = str(payload.get("next_cursor") or "LTE=")

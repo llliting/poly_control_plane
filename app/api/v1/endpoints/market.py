@@ -1,9 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Query
 
 from app.services.binance import get_binance_price
 from app.services.mock_data import get_market_summary, get_market_tape
 from app.services.orderbook import get_orderbook
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -19,7 +22,11 @@ def market_tape(asset: str = Query(default="BTC"), limit: int = Query(default=10
 
 @router.get("/market/orderbook")
 def market_orderbook(asset: str = Query(default="BTC")) -> dict:
-    return get_orderbook(asset=asset)
+    try:
+        return get_orderbook(asset=asset)
+    except Exception:
+        logger.exception("orderbook fetch failed for asset=%s", asset)
+        return {"slug": f"{asset.lower()}-updown-5m", "error": "fetch_failed", "yes": None, "no": None}
 
 
 @router.get("/market/binance-price")
