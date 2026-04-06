@@ -618,6 +618,151 @@ table.dense th.sortable.active {
   gap: 0.3rem;
 }
 
+.lr-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+}
+
+.lr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.lr-table-wrap {
+  max-height: calc(100vh - 14rem);
+}
+
+.lr-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 2;
+}
+
+.lr-market-row {
+  cursor: pointer;
+}
+
+.lr-market-row.active td {
+  background: rgba(124, 198, 254, 0.14);
+}
+
+.lr-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.lr-detail-top {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.lr-search-row {
+  flex: 1;
+  min-width: 14rem;
+}
+
+.lr-selected-market {
+  border: 1px solid #43505a;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.5rem;
+  background: #20252a;
+}
+
+.lr-selected-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.lr-selected-meta {
+  margin-top: 0.18rem;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.lr-books {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.lr-book-card {
+  border: 1px solid #42505a;
+  border-radius: 0.5rem;
+  padding: 0.45rem;
+  background: #20252a;
+}
+
+.lr-book-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin-bottom: 0.35rem;
+}
+
+.lr-book-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.lr-book-quote {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.lr-book-table td,
+.lr-book-table th {
+  padding: 0.24rem 0.28rem;
+}
+
+.lr-book-row {
+  cursor: pointer;
+}
+
+.lr-book-row-ask td:first-child {
+  color: var(--bad);
+}
+
+.lr-book-row-bid td:first-child {
+  color: var(--ok);
+}
+
+.lr-trade-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.lr-trade-form input[type="number"] {
+  background: #1e2327;
+  color: var(--text-main);
+  border: 1px solid #59656f;
+  border-radius: 0.4rem;
+  padding: 0.26rem 0.36rem;
+  font-size: 0.72rem;
+  width: 100%;
+}
+
+.lr-open-order-id {
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1100px) {
+  .lr-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ob-side-label {
   font-size: 0.7rem;
   font-weight: 700;

@@ -34,6 +34,7 @@
         <button class="nav-btn" data-page="monitor">Market Monitor</button>
         <button class="nav-btn" data-page="trades">Trades</button>
         <button class="nav-btn" data-page="pm-trades">PM Trades</button>
+        <button class="nav-btn" data-page="liquidity-rewards">Liquidity Rewards</button>
         <button class="nav-btn" data-page="logs">Logs</button>
       </aside>
 
@@ -436,6 +437,98 @@
               </table>
             </div>
           </article>
+        </section>
+
+        <section class="page" id="page-liquidity-rewards">
+          <div class="lr-layout">
+            <article class="card lr-markets-card">
+              <div class="card-title">Reward Markets</div>
+              <div class="lr-toolbar">
+                <label class="selector-row" for="lr-category-filter">
+                  <span class="selector-label">Category</span>
+                  <select id="lr-category-filter">
+                    <option value="all">All</option>
+                  </select>
+                </label>
+                <span id="lr-market-count" class="chip">0 markets</span>
+                <span id="lr-market-status" class="chip">idle</span>
+              </div>
+              <div class="table-wrap lr-table-wrap">
+                <table class="dense" id="lr-market-table">
+                  <thead></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="card lr-detail-card">
+              <div class="card-title">Market Detail</div>
+              <div class="lr-detail-top">
+                <label class="selector-row lr-search-row" for="lr-market-search">
+                  <span class="selector-label">Search slug</span>
+                  <input id="lr-market-search" type="text" list="lr-market-search-options" placeholder="search by slug..." />
+                  <datalist id="lr-market-search-options"></datalist>
+                </label>
+                <button id="lr-search-btn" type="button" class="tiny-btn">Select</button>
+                <span id="lr-trading-status" class="chip">trading: idle</span>
+              </div>
+              <div class="lr-selected-market">
+                <div class="lr-selected-title" id="lr-selected-title">No market selected</div>
+                <div class="lr-selected-meta mono" id="lr-selected-slug">-</div>
+              </div>
+
+              <div class="lr-books" id="lr-books"></div>
+
+              <div class="mi-section">
+                <div class="mi-section-title">Trade</div>
+                <div class="lr-trade-form">
+                  <label class="selector-row">
+                    <span class="selector-label">Outcome</span>
+                    <select id="lr-order-outcome"></select>
+                  </label>
+                  <label class="selector-row">
+                    <span class="selector-label">Side</span>
+                    <select id="lr-order-side">
+                      <option value="BUY">Buy</option>
+                      <option value="SELL">Sell</option>
+                    </select>
+                  </label>
+                  <label class="selector-row">
+                    <span class="selector-label">Price</span>
+                    <input id="lr-order-price" type="number" step="0.001" min="0.001" max="0.999" placeholder="0.50" />
+                  </label>
+                  <label class="selector-row">
+                    <span class="selector-label">Shares</span>
+                    <input id="lr-order-size" type="number" step="1" min="1" placeholder="10" />
+                  </label>
+                </div>
+                <div class="mi-form-actions">
+                  <button id="lr-limit-btn" type="button" class="tiny-btn">Place Limit</button>
+                  <button id="lr-taker-btn" type="button" class="tiny-btn">Place Taker</button>
+                  <span id="lr-order-status" class="chip">idle</span>
+                </div>
+              </div>
+
+              <div class="mi-section">
+                <div class="mi-section-title">Open Orders</div>
+                <div class="table-wrap table-wrap-fixed-5">
+                  <table class="dense" id="lr-open-orders-table">
+                    <thead>
+                      <tr>
+                        <th>Outcome</th>
+                        <th>Side</th>
+                        <th>Price</th>
+                        <th>Shares</th>
+                        <th>ID</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </article>
+          </div>
         </section>
 
         <section class="page" id="page-logs">

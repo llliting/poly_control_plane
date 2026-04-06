@@ -11,6 +11,15 @@ class PlaceOrderRequest(BaseModel):
     side: str = Field(description="BUY or SELL")
     price: float = Field(gt=0, le=1, description="Limit price (0-1)")
     size: float = Field(gt=0, description="Number of contracts")
+    order_type: str = Field(default="GTC", description="GTC or FAK")
+    post_only: bool = Field(default=True, description="Whether the limit order should be post-only")
+
+
+class PlaceTakerOrderRequest(BaseModel):
+    token_id: str = Field(description="CLOB token ID for the outcome")
+    side: str = Field(description="BUY or SELL")
+    size: float = Field(gt=0, description="Number of contracts")
+    order_type: str = Field(default="FAK", description="FAK or FOK")
 
 
 class ClosePositionRequest(BaseModel):
@@ -29,10 +38,10 @@ def trading_status() -> dict:
 
 
 @router.get("/trading/open-orders")
-def open_orders() -> dict:
+def open_orders(token_id: str | None = None) -> dict:
     if not polymarket_trading.is_enabled():
         raise HTTPException(status_code=503, detail="trading not configured")
-    orders = polymarket_trading.get_open_orders()
+    orders = polymarket_trading.get_open_orders(token_ids=[token_id] if token_id else None)
     return {"orders": orders}
 
 
@@ -47,6 +56,25 @@ def place_order(req: PlaceOrderRequest) -> dict:
         side=req.side.upper(),
         price=req.price,
         size=req.size,
+        order_type=req.order_type.upper(),
+        post_only=req.post_only,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "unknown error"))
+    return result
+
+
+@router.post("/trading/place-taker-order")
+def place_taker_order(req: PlaceTakerOrderRequest) -> dict:
+    if not polymarket_trading.is_enabled():
+        raise HTTPException(status_code=503, detail="trading not configured")
+    if req.side.upper() not in ("BUY", "SELL"):
+        raise HTTPException(status_code=400, detail="side must be BUY or SELL")
+    result = polymarket_trading.place_taker_order(
+        token_id=req.token_id,
+        side=req.side.upper(),
+        size=req.size,
+        order_type=req.order_type.upper(),
     )
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "unknown error"))

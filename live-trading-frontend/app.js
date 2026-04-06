@@ -25,6 +25,13 @@ const PM_POSITION_COLUMNS = [
   { key: "pnl_pct", label: "PnL %" },
 ];
 
+const LR_MARKET_COLUMNS = [
+  { key: "question", label: "Market" },
+  { key: "rewards_min_size", label: "Min Shares" },
+  { key: "reward_per_day", label: "Reward" },
+  { key: "rewards_max_spread", label: "Max Spread" },
+];
+
 const TRADE_COLUMNS = [
   { key: "time", label: "Time" },
   { key: "service", label: "Service" },
@@ -65,6 +72,20 @@ const state = {
   pmPositions: [],
   pmPositionSort: { key: "current_value", dir: "desc" },
   pmPositionStatusFilter: "all",
+  lrMarkets: [],
+  lrCategories: [],
+  lrCategoryFilter: "all",
+  lrSort: { key: "reward_per_day", dir: "desc" },
+  lrSelectedSlug: "",
+  lrMarketSearch: "",
+  lrSelectedMarket: null,
+  lrOrderbook: null,
+  lrOpenOrders: [],
+  lrMarketStatus: "idle",
+  lrTradingStatus: "trading: idle",
+  lrOrderStatus: "idle",
+  lrTradingEnabled: false,
+  lrOrderBusy: false,
   openPositions: [],
   logs: [],
   marketSummary: {
@@ -383,6 +404,10 @@ function savePrefs() {
     pmTradeOutcomeFilter: state.pmTradeOutcomeFilter,
     pmPositionSort: state.pmPositionSort,
     pmPositionStatusFilter: state.pmPositionStatusFilter,
+    lrCategoryFilter: state.lrCategoryFilter,
+    lrSort: state.lrSort,
+    lrSelectedSlug: state.lrSelectedSlug,
+    lrMarketSearch: state.lrMarketSearch,
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -399,12 +424,12 @@ function restorePrefs() {
     if (!parsed || typeof parsed !== "object") return;
 
     if (typeof parsed.activePage === "string") {
-      const validPages = ["overview", "services", "monitor", "trades", "pm-trades", "logs"];
+      const validPages = ["overview", "services", "monitor", "trades", "pm-trades", "liquidity-rewards", "logs"];
       if (validPages.includes(parsed.activePage)) state.activePage = parsed.activePage;
     }
     if (parsed.pageScrollByPage && typeof parsed.pageScrollByPage === "object") {
       const next = {};
-      ["overview", "services", "monitor", "trades", "pm-trades", "logs"].forEach((k) => {
+      ["overview", "services", "monitor", "trades", "pm-trades", "liquidity-rewards", "logs"].forEach((k) => {
         const entry = parsed.pageScrollByPage[k];
         if (!entry || typeof entry !== "object") return;
         const windowY = Number(entry.windowY);
@@ -453,6 +478,18 @@ function restorePrefs() {
       state.pmPositionSort = { key: parsed.pmPositionSort.key, dir: parsed.pmPositionSort.dir };
     }
     if (typeof parsed.pmPositionStatusFilter === "string") state.pmPositionStatusFilter = parsed.pmPositionStatusFilter;
+    if (typeof parsed.lrCategoryFilter === "string") state.lrCategoryFilter = parsed.lrCategoryFilter;
+    if (
+      parsed.lrSort &&
+      typeof parsed.lrSort === "object" &&
+      typeof parsed.lrSort.key === "string" &&
+      (parsed.lrSort.dir === "asc" || parsed.lrSort.dir === "desc") &&
+      LR_MARKET_COLUMNS.some((c) => c.key === parsed.lrSort.key)
+    ) {
+      state.lrSort = { key: parsed.lrSort.key, dir: parsed.lrSort.dir };
+    }
+    if (typeof parsed.lrSelectedSlug === "string") state.lrSelectedSlug = parsed.lrSelectedSlug;
+    if (typeof parsed.lrMarketSearch === "string") state.lrMarketSearch = parsed.lrMarketSearch;
   } catch (_err) {
     // Ignore malformed persisted data.
   }
@@ -1612,6 +1649,398 @@ function mapTradeRow(t) {
   };
 }
 
+function formatReward(value) {
+  if (value == null || value === "") return "-";
+  return `$${formatNumber(value, 2)}/day`;
+}
+
+function truncateMiddle(text, max = 14) {
+  const value = String(text || "");
+  if (value.length <= max) return value;
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function getLrSortValue(market, key) {
+  if (key === "question") return market.question || "";
+  return Number(market[key] || 0);
+}
+
+function findLrMarket(slug) {
+  const target = String(slug || "").trim().toLowerCase();
+  return state.lrMarkets.find((market) => (market.market_slug || "").toLowerCase() === target) || null;
+}
+
+function getLrSelectedToken() {
+  const select = document.getElementById("lr-order-outcome");
+  const tokenId = select?.value || "";
+  return (state.lrSelectedMarket?.tokens || []).find((token) => token.token_id === tokenId) || null;
+}
+
+function getLrOrderValue(order, keys) {
+  for (const key of keys) {
+    const value = order?.[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return null;
+}
+
+function selectLiquidityRewardMarket(slug) {
+  const market = findLrMarket(slug);
+  if (!market) return;
+  state.lrSelectedSlug = market.market_slug;
+  state.lrMarketSearch = market.market_slug;
+  state.lrSelectedMarket = market;
+}
+
+function renderLiquidityRewards() {
+  const categorySelect = document.getElementById("lr-category-filter");
+  const countEl = document.getElementById("lr-market-count");
+  const statusEl = document.getElementById("lr-market-status");
+  const searchInput = document.getElementById("lr-market-search");
+  const searchOptions = document.getElementById("lr-market-search-options");
+  const selectedTitle = document.getElementById("lr-selected-title");
+  const selectedSlug = document.getElementById("lr-selected-slug");
+  const orderOutcome = document.getElementById("lr-order-outcome");
+  const orderStatus = document.getElementById("lr-order-status");
+  const tradingStatus = document.getElementById("lr-trading-status");
+  const limitBtn = document.getElementById("lr-limit-btn");
+  const takerBtn = document.getElementById("lr-taker-btn");
+  const booksEl = document.getElementById("lr-books");
+  const table = document.getElementById("lr-market-table");
+  const openOrdersTbody = document.querySelector("#lr-open-orders-table tbody");
+  if (!table || !booksEl || !openOrdersTbody) return;
+
+  const categories = [{ slug: "all", label: "All" }, ...state.lrCategories.filter((item) => item.slug !== "all")];
+  categorySelect.innerHTML = categories
+    .map((item) => `<option value="${item.slug}">${item.label}</option>`)
+    .join("");
+  categorySelect.value = state.lrCategoryFilter;
+  categorySelect.onchange = async (e) => {
+    state.lrCategoryFilter = e.target.value;
+    savePrefs();
+    renderLiquidityRewards();
+  };
+
+  let markets = [...state.lrMarkets];
+  if (state.lrCategoryFilter !== "all") {
+    markets = markets.filter((market) => market.category_slug === state.lrCategoryFilter);
+  }
+  markets.sort((a, b) => {
+    const av = getLrSortValue(a, state.lrSort.key);
+    const bv = getLrSortValue(b, state.lrSort.key);
+    const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+    return state.lrSort.dir === "asc" ? cmp : -cmp;
+  });
+
+  if (!markets.find((market) => market.market_slug === state.lrSelectedSlug) && markets[0]) {
+    selectLiquidityRewardMarket(markets[0].market_slug);
+  }
+
+  countEl.textContent = `${markets.length} markets`;
+  statusEl.textContent = state.lrMarketStatus;
+  statusEl.className = `chip${state.lrMarketStatus.includes("failed") ? " bad" : state.lrMarketStatus.includes("loading") ? " warn" : ""}`;
+  tradingStatus.textContent = state.lrTradingStatus;
+  orderStatus.textContent = state.lrOrderStatus;
+  if (limitBtn) limitBtn.disabled = state.lrOrderBusy || !state.lrTradingEnabled || !state.lrSelectedMarket;
+  if (takerBtn) takerBtn.disabled = state.lrOrderBusy || !state.lrTradingEnabled || !state.lrSelectedMarket;
+
+  searchInput.value = state.lrMarketSearch;
+  searchInput.oninput = () => {
+    state.lrMarketSearch = searchInput.value;
+    savePrefs();
+  };
+  searchOptions.innerHTML = state.lrMarkets
+    .slice(0, 500)
+    .map((market) => `<option value="${market.market_slug}">${market.question}</option>`)
+    .join("");
+  const runSearch = async () => {
+    const query = String(searchInput.value || "").trim().toLowerCase();
+    if (!query) return;
+    const exact = state.lrMarkets.find((market) => (market.market_slug || "").toLowerCase() === query);
+    const partial =
+      exact ||
+      state.lrMarkets.find(
+        (market) =>
+          (market.market_slug || "").toLowerCase().includes(query) ||
+          (market.question || "").toLowerCase().includes(query),
+      );
+    if (!partial) {
+      state.lrOrderStatus = "market not found";
+      renderLiquidityRewards();
+      return;
+    }
+    selectLiquidityRewardMarket(partial.market_slug);
+    savePrefs();
+    await refreshLiquidityRewardsDetail();
+    renderLiquidityRewards();
+  };
+  document.getElementById("lr-search-btn").onclick = runSearch;
+  searchInput.onkeydown = async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      await runSearch();
+    }
+  };
+
+  const thead = table.querySelector("thead");
+  const tbody = table.querySelector("tbody");
+  thead.innerHTML = `<tr>${LR_MARKET_COLUMNS
+    .map((col) => {
+      const active = state.lrSort.key === col.key;
+      const arrow = active ? (state.lrSort.dir === "asc" ? "▲" : "▼") : "";
+      return `<th class="sortable ${active ? "active" : ""}" data-lr-sort-key="${col.key}">${col.label} <span class="sort-arrow">${arrow}</span></th>`;
+    })
+    .join("")}</tr>`;
+  tbody.innerHTML = markets
+    .map(
+      (market) => `
+      <tr class="lr-market-row ${market.market_slug === state.lrSelectedSlug ? "active" : ""}" data-lr-slug="${market.market_slug}">
+        <td title="${market.market_slug}">${market.question}</td>
+        <td>${formatNumberOrDash(market.rewards_min_size, 0)}</td>
+        <td>${formatReward(market.reward_per_day)}</td>
+        <td>${formatNumberOrDash(market.rewards_max_spread, 0)}</td>
+      </tr>
+    `,
+    )
+    .join("");
+  thead.querySelectorAll("[data-lr-sort-key]").forEach((th) => {
+    th.onclick = () => {
+      const key = th.dataset.lrSortKey;
+      if (!key) return;
+      if (state.lrSort.key === key) state.lrSort.dir = state.lrSort.dir === "asc" ? "desc" : "asc";
+      else {
+        state.lrSort.key = key;
+        state.lrSort.dir = key === "question" ? "asc" : "desc";
+      }
+      savePrefs();
+      renderLiquidityRewards();
+    };
+  });
+  tbody.querySelectorAll("[data-lr-slug]").forEach((row) => {
+    row.onclick = async () => {
+      const slug = row.dataset.lrSlug;
+      if (!slug) return;
+      selectLiquidityRewardMarket(slug);
+      savePrefs();
+      await refreshLiquidityRewardsDetail();
+      renderLiquidityRewards();
+    };
+  });
+
+  const market = state.lrSelectedMarket;
+  if (!market) {
+    selectedTitle.textContent = "No market selected";
+    selectedSlug.textContent = "-";
+    booksEl.innerHTML = '<div class="mini-label">Select a reward market to inspect the book.</div>';
+    orderOutcome.innerHTML = "";
+    openOrdersTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim)">no market selected</td></tr>';
+    return;
+  }
+
+  selectedTitle.textContent = market.question;
+  selectedSlug.textContent = market.market_slug;
+  orderOutcome.innerHTML = (market.tokens || [])
+    .map((token) => `<option value="${token.token_id}">${token.outcome}</option>`)
+    .join("");
+  if (!orderOutcome.value && market.tokens?.[0]?.token_id) {
+    orderOutcome.value = market.tokens[0].token_id;
+  }
+
+  const books = state.lrOrderbook?.books || [];
+  booksEl.innerHTML = books.length
+    ? books
+        .map((book) => {
+          const rows = [];
+          let askTotal = 0;
+          (book.asks || []).slice().reverse().forEach((level) => {
+            askTotal += Number(level.size || 0);
+            rows.push(
+              `<tr class="lr-book-row lr-book-row-ask" data-token-id="${book.token_id}" data-price="${level.price}" data-side="BUY"><td>${Number(level.price || 0).toFixed(3)}</td><td>${formatNumber(level.size || 0, 0)}</td><td>${formatNumber(askTotal, 0)}</td></tr>`,
+            );
+          });
+          let bidTotal = 0;
+          (book.bids || []).forEach((level) => {
+            bidTotal += Number(level.size || 0);
+            rows.push(
+              `<tr class="lr-book-row lr-book-row-bid" data-token-id="${book.token_id}" data-price="${level.price}" data-side="SELL"><td>${Number(level.price || 0).toFixed(3)}</td><td>${formatNumber(level.size || 0, 0)}</td><td>${formatNumber(bidTotal, 0)}</td></tr>`,
+            );
+          });
+          return `
+            <div class="lr-book-card">
+              <div class="lr-book-head">
+                <div class="lr-book-title">${book.outcome}</div>
+                <div class="lr-book-quote mono">bid ${book.best_bid != null ? Number(book.best_bid).toFixed(3) : "--"} / ask ${book.best_ask != null ? Number(book.best_ask).toFixed(3) : "--"}</div>
+              </div>
+              <div class="table-wrap">
+                <table class="dense lr-book-table">
+                  <thead><tr><th>Price</th><th>Shares</th><th>Total</th></tr></thead>
+                  <tbody>${rows.join("") || '<tr><td colspan="3" style="text-align:center;color:var(--text-dim)">no liquidity</td></tr>'}</tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        })
+        .join("")
+    : '<div class="mini-label">No orderbook loaded.</div>';
+  booksEl.querySelectorAll(".lr-book-row").forEach((row) => {
+    row.onclick = () => {
+      const tokenId = row.dataset.tokenId || "";
+      const price = row.dataset.price || "";
+      const side = row.dataset.side || "";
+      orderOutcome.value = tokenId;
+      document.getElementById("lr-order-price").value = price;
+      document.getElementById("lr-order-side").value = side;
+    };
+  });
+
+  if (!state.lrTradingEnabled) {
+    openOrdersTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim)">trading not configured</td></tr>';
+  } else if (!state.lrOpenOrders.length) {
+    openOrdersTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim)">no open orders</td></tr>';
+  } else {
+    const tokenMap = Object.fromEntries((market.tokens || []).map((token) => [token.token_id, token.outcome]));
+    openOrdersTbody.innerHTML = state.lrOpenOrders
+      .map((order) => {
+        const orderId = String(getLrOrderValue(order, ["id", "order_id", "orderID"]) || "");
+        const tokenId = String(getLrOrderValue(order, ["asset_id", "assetId", "token_id", "tokenId"]) || "");
+        const side = String(getLrOrderValue(order, ["side"]) || "-");
+        const price = Number(getLrOrderValue(order, ["price"]) || 0);
+        const size = Number(getLrOrderValue(order, ["original_size", "size", "remaining_size", "remainingSize"]) || 0);
+        return `
+          <tr>
+            <td>${tokenMap[tokenId] || truncateMiddle(tokenId, 10)}</td>
+            <td>${side}</td>
+            <td>${price ? price.toFixed(3) : "-"}</td>
+            <td>${size ? formatNumber(size, 0) : "-"}</td>
+            <td class="mono lr-open-order-id" title="${orderId}">${truncateMiddle(orderId, 12)}</td>
+            <td>${orderId ? `<button class="tiny-btn lr-cancel-btn" data-order-id="${orderId}">Cancel</button>` : ""}</td>
+          </tr>
+        `;
+      })
+      .join("");
+    openOrdersTbody.querySelectorAll(".lr-cancel-btn").forEach((btn) => {
+      btn.onclick = async () => {
+        const orderId = btn.dataset.orderId;
+        if (!orderId) return;
+        btn.disabled = true;
+        state.lrOrderStatus = "canceling...";
+        renderLiquidityRewards();
+        try {
+          await apiPost("/trading/cancel-order", { order_id: orderId });
+          state.lrOrderStatus = "order canceled";
+          await refreshLiquidityRewardsDetail();
+        } catch (err) {
+          state.lrOrderStatus = `cancel failed: ${err.message}`;
+        }
+        renderLiquidityRewards();
+      };
+    });
+  }
+}
+
+async function refreshLiquidityRewardsMarkets() {
+  state.lrMarketStatus = "loading...";
+  try {
+    const data = await apiGet("/liquidity-rewards/markets");
+    state.lrMarkets = data.items || [];
+    state.lrCategories = data.categories || [];
+    if (!findLrMarket(state.lrSelectedSlug) && state.lrMarkets[0]) {
+      selectLiquidityRewardMarket(state.lrMarkets[0].market_slug);
+    } else if (state.lrSelectedSlug) {
+      state.lrSelectedMarket = findLrMarket(state.lrSelectedSlug);
+    }
+    state.lrMarketStatus = `updated ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
+  } catch (err) {
+    console.error("refresh liquidity reward markets failed", err);
+    state.lrMarketStatus = "failed to load";
+  }
+}
+
+async function refreshLiquidityRewardsDetail() {
+  if (!state.lrSelectedSlug) return;
+  state.lrSelectedMarket = findLrMarket(state.lrSelectedSlug) || state.lrSelectedMarket;
+  try {
+    const [market, orderbook, tradingStatus, openOrders] = await Promise.all([
+      apiGet("/liquidity-rewards/market", { slug: state.lrSelectedSlug }).catch(() => state.lrSelectedMarket),
+      apiGet("/liquidity-rewards/orderbook", { slug: state.lrSelectedSlug }).catch(() => null),
+      apiGet("/trading/status").catch(() => ({ enabled: false })),
+      apiGet("/liquidity-rewards/open-orders", { slug: state.lrSelectedSlug }).catch(() => ({ orders: [] })),
+    ]);
+    state.lrSelectedMarket = market || state.lrSelectedMarket;
+    state.lrOrderbook = orderbook;
+    state.lrTradingEnabled = Boolean(tradingStatus?.enabled);
+    state.lrTradingStatus = state.lrTradingEnabled ? "trading: enabled" : "trading: disabled";
+    state.lrOpenOrders = state.lrTradingEnabled ? openOrders.orders || [] : [];
+  } catch (err) {
+    console.error("refresh liquidity rewards detail failed", err);
+    state.lrTradingStatus = "trading: failed";
+  }
+}
+
+function wireLiquidityRewardsActions() {
+  const limitBtn = document.getElementById("lr-limit-btn");
+  const takerBtn = document.getElementById("lr-taker-btn");
+  if (!limitBtn || !takerBtn) return;
+
+  const runOrder = async (mode) => {
+    const token = getLrSelectedToken();
+    const side = document.getElementById("lr-order-side")?.value || "BUY";
+    const price = parseFloat(document.getElementById("lr-order-price")?.value);
+    const size = parseFloat(document.getElementById("lr-order-size")?.value);
+    if (!token?.token_id) {
+      state.lrOrderStatus = "pick an outcome";
+      renderLiquidityRewards();
+      return;
+    }
+    if (!Number.isFinite(size) || size <= 0) {
+      state.lrOrderStatus = "enter shares";
+      renderLiquidityRewards();
+      return;
+    }
+    if (mode === "limit" && (!Number.isFinite(price) || price <= 0 || price >= 1)) {
+      state.lrOrderStatus = "price must be 0-1";
+      renderLiquidityRewards();
+      return;
+    }
+
+    state.lrOrderBusy = true;
+    state.lrOrderStatus = mode === "limit" ? "placing limit..." : "placing taker...";
+    limitBtn.disabled = true;
+    takerBtn.disabled = true;
+    renderLiquidityRewards();
+
+    try {
+      if (mode === "limit") {
+        await apiPost("/trading/place-order", {
+          token_id: token.token_id,
+          side,
+          price,
+          size,
+          order_type: "GTC",
+        });
+      } else {
+        await apiPost("/trading/place-taker-order", {
+          token_id: token.token_id,
+          side,
+          size,
+        });
+      }
+      state.lrOrderStatus = mode === "limit" ? "limit order placed" : "taker order sent";
+      await refreshLiquidityRewardsDetail();
+    } catch (err) {
+      state.lrOrderStatus = `failed: ${err.message}`;
+    } finally {
+      state.lrOrderBusy = false;
+      limitBtn.disabled = false;
+      takerBtn.disabled = false;
+      renderLiquidityRewards();
+    }
+  };
+
+  limitBtn.onclick = async () => runOrder("limit");
+  takerBtn.onclick = async () => runOrder("taker");
+}
+
 async function refreshLogs() {
   const data = await apiGet("/logs", {
     service_key: state.selectedLogService,
@@ -1815,6 +2244,7 @@ function renderAll() {
   renderTrades();
   renderPmTrades();
   renderPmPositions();
+  renderLiquidityRewards();
   renderPriceMonitor();
   renderLogs();
 }
@@ -1832,6 +2262,10 @@ async function refreshActivePage() {
   if (state.activePage === "pm-trades") {
     await refreshPmTrades();
     await refreshPmPositions();
+  }
+  if (state.activePage === "liquidity-rewards") {
+    await refreshLiquidityRewardsMarkets();
+    await refreshLiquidityRewardsDetail();
   }
   if (state.activePage === "logs") await refreshLogs();
 }
@@ -1858,9 +2292,11 @@ async function initialLoad() {
     refreshServiceDetailData(),
     refreshPmTrades(),
     refreshPmPositions(),
+    refreshLiquidityRewardsMarkets(),
     refreshLogs(),
     refreshMarket(),
   ]);
+  await refreshLiquidityRewardsDetail();
   // Non-critical — don't let these block or break initial load
   refreshMiTradingStatus().catch(() => {});
   refreshMiPositions().catch(() => {});
@@ -1871,6 +2307,7 @@ async function init() {
   wireNav();
   wireServiceActions();
   wireMiPlaceOrder();
+  wireLiquidityRewardsActions();
   window.addEventListener("scroll", scheduleScrollSave, { passive: true });
   const content = document.querySelector(".content");
   if (content) content.addEventListener("scroll", scheduleScrollSave, { passive: true });

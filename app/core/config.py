@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     polymarket_private_key: str | None = None
     polymarket_chain_id: int = 137
     polymarket_funder: str | None = None
+    polymarket_signature_type: int = 2
+    polymarket_trade_retry_attempts: int = 3
+    polymarket_trade_retry_sleep_ms: int = 250
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

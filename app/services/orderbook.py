@@ -82,6 +82,47 @@ def _fetch_book(token_id: str) -> dict:
     }
 
 
+def fetch_book(token_id: str) -> dict:
+    return _fetch_book(token_id)
+
+
+def get_orderbook_for_market(slug: str, tokens: list[dict]) -> dict:
+    books: list[dict] = []
+    for token in tokens[:2]:
+        token_id = str(token.get("token_id") or "").strip()
+        outcome = str(token.get("outcome") or "").strip() or f"Outcome {len(books) + 1}"
+        if not token_id:
+            books.append(
+                {
+                    "token_id": "",
+                    "outcome": outcome,
+                    "best_bid": None,
+                    "best_ask": None,
+                    "mid": None,
+                    "spread": None,
+                    "bids": [],
+                    "asks": [],
+                }
+            )
+            continue
+        try:
+            book = _fetch_book(token_id)
+        except Exception:
+            book = {"best_bid": None, "best_ask": None, "mid": None, "spread": None, "bids": [], "asks": []}
+        books.append({"token_id": token_id, "outcome": outcome, **book})
+
+    result = {
+        "slug": slug,
+        "books": books,
+        "as_of": time.time(),
+    }
+    if books:
+        result["yes"] = books[0]
+    if len(books) > 1:
+        result["no"] = books[1]
+    return result
+
+
 def _compute_slug(asset: str) -> str:
     """Compute the current 5-min market slug for the given asset."""
     prefix = f"{asset.lower()}-updown-5m"
@@ -121,22 +162,13 @@ def get_orderbook(asset: str = "BTC") -> dict:
             "no": None,
         }
 
-    yes_token, no_token = tokens
-    try:
-        yes_book = _fetch_book(yes_token)
-    except Exception:
-        yes_book = {"best_bid": None, "best_ask": None, "mid": None, "spread": None, "bids": [], "asks": []}
-    try:
-        no_book = _fetch_book(no_token)
-    except Exception:
-        no_book = {"best_bid": None, "best_ask": None, "mid": None, "spread": None, "bids": [], "asks": []}
-
-    result = {
-        "slug": slug,
-        "yes": yes_book,
-        "no": no_book,
-        "as_of": time.time(),
-    }
+    result = get_orderbook_for_market(
+        slug=slug,
+        tokens=[
+            {"token_id": yes_token, "outcome": "UP"},
+            {"token_id": no_token, "outcome": "DOWN"},
+        ],
+    )
 
     with _lock:
         _cache[cache_key] = (time.time(), result)
