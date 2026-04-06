@@ -66,9 +66,8 @@ _USER_AGENT = "Mozilla/5.0 (compatible; PolyControlPlane/1.0)"
 
 
 def _get_json(url: str, timeout: float = 8.0) -> dict | list:
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    from app.core.http import get_json
+    return get_json(url, timeout=timeout)
 
 
 def _get_json_safe(url: str, default: dict | list | None = None, timeout: float = 8.0) -> dict | list:

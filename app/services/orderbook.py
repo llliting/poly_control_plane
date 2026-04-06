@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.parse
-import urllib.request
 from threading import Lock
 
 from app.core.config import settings
+from app.core.http import get_json as _get_json
+
+logger = logging.getLogger(__name__)
 
 _CACHE_TTL_SECS = 3.0
 _lock = Lock()
@@ -16,12 +19,6 @@ _cache: dict[str, tuple[float, dict]] = {}
 
 CLOB_HOST = "https://clob.polymarket.com"
 GAMMA_HOST = "https://gamma-api.polymarket.com"
-
-
-def _get_json(url: str, timeout: float = 4.0) -> dict | list:
-    req = urllib.request.Request(url, headers={"User-Agent": "control-plane/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
 
 
 def _resolve_token_ids(slug: str) -> tuple[str, str] | None:
@@ -33,20 +30,25 @@ def _resolve_token_ids(slug: str) -> tuple[str, str] | None:
     """
     try:
         url = f"{GAMMA_HOST}/markets?slug={urllib.parse.quote(slug)}"
+        logger.debug("resolving token IDs for slug=%s url=%s", slug, url)
         items = _get_json(url)
         if not isinstance(items, list) or not items:
+            logger.warning("resolve_token_ids: no results for slug=%s", slug)
             return None
         match = next((m for m in items if m.get("slug") == slug), None)
         if not match:
+            logger.warning("resolve_token_ids: slug=%s not in %d gamma results", slug, len(items))
             return None
         # clobTokenIds is a JSON-encoded list string like '["id1", "id2"]'
         clob_ids_raw = match.get("clobTokenIds")
         if clob_ids_raw:
             clob_ids = json.loads(clob_ids_raw) if isinstance(clob_ids_raw, str) else clob_ids_raw
             if isinstance(clob_ids, list) and len(clob_ids) >= 2:
+                logger.debug("resolved slug=%s -> tokens=%s", slug, clob_ids[:2])
                 return (clob_ids[0], clob_ids[1])
+        logger.warning("resolve_token_ids: no clobTokenIds for slug=%s", slug)
     except Exception:
-        pass
+        logger.exception("resolve_token_ids failed for slug=%s", slug)
     return None
 
 

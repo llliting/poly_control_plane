@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.parse
-import urllib.request
 from threading import Lock
 
+from app.core.http import get_json as _get_json
+
+logger = logging.getLogger(__name__)
 
 CLOB_HOST = "https://clob.polymarket.com"
 GAMMA_HOST = "https://gamma-api.polymarket.com"
@@ -31,12 +34,6 @@ _CATEGORY_LABELS = {
     "business": "Business",
     "science": "Science",
 }
-
-
-def _get_json(url: str, timeout: float = 8.0) -> dict | list:
-    req = urllib.request.Request(url, headers={"User-Agent": "control-plane/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
 
 
 def _cached(key: tuple[str, str], loader) -> dict:
@@ -305,18 +302,23 @@ def _fetch_rewards_markets_via_current(
 ) -> dict:
     items: list[dict] = []
     next_cursor: str | None = None
+    page = 0
     while True:
         params = {"next_cursor": next_cursor}
         url = f"{CLOB_HOST}/rewards/markets/current"
         query = _build_query(params)
         if query:
             url = f"{url}?{query}"
+        logger.info("fetch_rewards_markets_via_current: page=%d url=%s", page, url)
         payload = _get_json(url)
         if not isinstance(payload, dict):
+            logger.warning("fetch_rewards_markets_via_current: unexpected payload type=%s", type(payload).__name__)
             break
         rows = payload.get("data") or []
         if not isinstance(rows, list) or not rows:
+            logger.info("fetch_rewards_markets_via_current: no rows on page=%d (type=%s len=%s)", page, type(rows).__name__, len(rows) if isinstance(rows, list) else "n/a")
             break
+        logger.info("fetch_rewards_markets_via_current: page=%d got %d rows", page, len(rows))
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -324,17 +326,24 @@ def _fetch_rewards_markets_via_current(
             try:
                 detail = _fetch_market_rewards(condition_id) or row
             except Exception:
+                logger.debug("fetch_market_rewards failed for condition_id=%s", condition_id, exc_info=True)
                 detail = row
             try:
                 gamma = _lookup_gamma_market(condition_id)
             except Exception:
+                logger.debug("lookup_gamma_market failed for condition_id=%s", condition_id, exc_info=True)
                 gamma = None
             item = _merge_with_gamma(detail, gamma)
             items.append(_normalize_market(item))
         next_cursor = str(payload.get("next_cursor") or "LTE=")
         if next_cursor == "LTE=":
             break
+        page += 1
+    logger.info("fetch_rewards_markets_via_current: done, total items=%d", len(items))
     return _build_response(_filter_and_sort_items(items, q, category, order_by, position), source="current")
+
+
+_MAX_PAGES = 10  # Cap at 5000 markets to keep initial load under ~15s
 
 
 def _fetch_rewards_markets(
@@ -345,6 +354,7 @@ def _fetch_rewards_markets(
 ) -> dict:
     items: list[dict] = []
     next_cursor: str | None = None
+    page = 0
     while True:
         params = {
             "page_size": "500",
@@ -358,16 +368,25 @@ def _fetch_rewards_markets(
         query = _build_query(params)
         if query:
             url = f"{url}?{query}"
+        logger.info("fetch_rewards_markets_multi: page=%d url=%s", page, url)
         payload = _get_json(url)
         if not isinstance(payload, dict):
+            logger.warning("fetch_rewards_markets_multi: unexpected payload type=%s", type(payload).__name__)
             break
         rows = payload.get("data") or []
         if not isinstance(rows, list):
+            logger.warning("fetch_rewards_markets_multi: data is not a list, type=%s", type(rows).__name__)
             break
+        logger.info("fetch_rewards_markets_multi: page=%d got %d rows", page, len(rows))
         items.extend(_normalize_market(row) for row in rows if isinstance(row, dict))
         next_cursor = str(payload.get("next_cursor") or "LTE=")
         if next_cursor == "LTE=" or not rows:
             break
+        page += 1
+        if page >= _MAX_PAGES:
+            logger.info("fetch_rewards_markets_multi: hit page cap (%d), stopping", _MAX_PAGES)
+            break
+    logger.info("fetch_rewards_markets_multi: done, total items=%d", len(items))
     return _build_response(items, source="multi")
 
 
@@ -388,14 +407,23 @@ def list_rewards_markets(
     )
     def _load() -> dict:
         errors: list[str] = []
+        # Prefer multi endpoint — it returns all fields in a single paginated call.
+        # The current endpoint requires N+1 lookups per market (very slow for 1000+ markets).
         try:
-            return _fetch_rewards_markets_via_current(q, category, order_by, position)
+            result = _fetch_rewards_markets(q, category, order_by, position)
+            logger.info("list_rewards_markets: loaded %d items via multi", result.get("total", 0))
+            return result
         except Exception as exc:
-            errors.append(f"current:{exc}")
-        try:
-            return _fetch_rewards_markets(q, category, order_by, position)
-        except Exception as exc:
+            logger.warning("list_rewards_markets: multi endpoint failed: %s", exc, exc_info=True)
             errors.append(f"multi:{exc}")
+        try:
+            result = _fetch_rewards_markets_via_current(q, category, order_by, position)
+            logger.info("list_rewards_markets: loaded %d items via current (fallback)", result.get("total", 0))
+            return result
+        except Exception as exc:
+            logger.warning("list_rewards_markets: current endpoint also failed: %s", exc, exc_info=True)
+            errors.append(f"current:{exc}")
+        logger.error("list_rewards_markets: both sources failed: %s", errors)
         return _build_response([], source="unavailable", error="; ".join(errors))
 
     return _cached(("rewards_markets", cache_key), _load)
@@ -405,15 +433,21 @@ def get_market_by_slug(slug: str) -> dict | None:
     target = (slug or "").strip().lower()
     if not target:
         return None
+    logger.info("get_market_by_slug: looking up slug=%s", target)
     data = list_rewards_markets()
+    logger.info("get_market_by_slug: have %d cached markets (source=%s, error=%s)", len(data["items"]), data.get("source"), data.get("error"))
     cached = next((item for item in data["items"] if (item.get("market_slug") or "").lower() == target), None)
     if cached:
+        logger.info("get_market_by_slug: found in cache slug=%s", cached.get("market_slug"))
         return cached
+    logger.info("get_market_by_slug: not in cache, trying gamma lookup for slug=%s", slug)
     try:
         gamma = _lookup_gamma_market_by_slug(slug)
         if not gamma:
+            logger.warning("get_market_by_slug: gamma returned nothing for slug=%s", slug)
             return None
         condition_id = str(gamma.get("conditionId") or "").strip()
+        logger.info("get_market_by_slug: gamma found slug=%s condition_id=%s", slug, condition_id)
         detail = _fetch_market_rewards(condition_id) or {}
         item = _merge_with_gamma(detail, gamma)
         if not item.get("market_slug"):
@@ -422,4 +456,5 @@ def get_market_by_slug(slug: str) -> dict | None:
             item["condition_id"] = condition_id
         return _normalize_market(item)
     except Exception:
+        logger.exception("get_market_by_slug: failed for slug=%s", slug)
         return None
