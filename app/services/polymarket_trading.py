@@ -34,17 +34,28 @@ def _get_client():
             return None
 
         try:
-            from py_clob_client.client import ClobClient
+            from py_clob_client_v2 import ApiCreds, BuilderConfig, ClobClient
 
+            builder_code = (settings.poly_builder_code or "").strip()
+            builder_config = BuilderConfig(builder_code=builder_code) if builder_code else None
+            creds = None
+            if settings.clob_api_key and settings.clob_secret and settings.clob_pass_phrase:
+                creds = ApiCreds(
+                    api_key=settings.clob_api_key,
+                    api_secret=settings.clob_secret,
+                    api_passphrase=settings.clob_pass_phrase,
+                )
             client = ClobClient(
                 host="https://clob.polymarket.com",
                 chain_id=settings.polymarket_chain_id,
                 key=pk,
+                creds=creds,
                 signature_type=settings.polymarket_signature_type,
                 funder=settings.polymarket_funder or None,
+                builder_config=builder_config,
             )
-            creds = client.create_or_derive_api_creds()
-            client.set_api_creds(creds)
+            if creds is None:
+                client.set_api_creds(client.create_or_derive_api_key())
             logger.info("polymarket trading: CLOB client initialised")
             _client = client
         except Exception as exc:
@@ -97,11 +108,11 @@ def _response_error(resp) -> str:
     return str(resp.get("errorMsg") or resp.get("error") or resp.get("message") or "")
 
 
-def _post_order_with_retries(client, signed_order, order_type, *, label: str, context: str) -> dict:
+def _submit_order_with_retries(submit_order, *, label: str, context: str) -> dict:
     last_error = "trade retries exhausted"
     for attempt in range(1, settings.polymarket_trade_retry_attempts + 1):
         try:
-            resp = client.post_order(signed_order, order_type)
+            resp = submit_order()
             if _response_success(resp):
                 return {"success": True, "order": resp, "order_id": _response_order_id(resp)}
             last_error = _response_error(resp) or f"{label} order not successful"
@@ -127,23 +138,11 @@ def _post_order_with_retries(client, signed_order, order_type, *, label: str, co
     return {"success": False, "error": last_error}
 
 
-def _create_limit_order(client, token_id: str, side: str, price: float, size: float, post_only: bool):
-    from py_clob_client.clob_types import OrderArgs
-    from py_clob_client.order_builder.constants import BUY, SELL
+def _create_limit_order_args(token_id: str, side: str, price: float, size: float):
+    from py_clob_client_v2 import OrderArgs, Side
 
-    clob_side = BUY if side.upper() == "BUY" else SELL
-    base_kwargs = {
-        "token_id": token_id,
-        "price": price,
-        "size": size,
-        "side": clob_side,
-    }
-    if post_only:
-        try:
-            return client.create_order(OrderArgs(**base_kwargs, post_only=True))
-        except TypeError:
-            logger.warning("py_clob_client OrderArgs does not support post_only; falling back to non-post-only create_order")
-    return client.create_order(OrderArgs(**base_kwargs))
+    clob_side = Side.BUY if side.upper() == "BUY" else Side.SELL
+    return OrderArgs(token_id=token_id, price=price, size=size, side=clob_side)
 
 
 def _marketable_limit_price(book: dict, side: str, size: float) -> float | None:
@@ -175,11 +174,11 @@ def get_open_orders(token_ids: list[str] | None = None) -> list[dict]:
         return []
     try:
         try:
-            from py_clob_client.clob_types import OpenOrderParams
+            from py_clob_client_v2 import OpenOrderParams
 
-            resp = client.get_orders(OpenOrderParams())
+            resp = client.get_open_orders(OpenOrderParams())
         except Exception:
-            resp = client.get_orders()
+            resp = client.get_open_orders()
         orders = _extract_order_rows(resp)
         if token_ids:
             allowed = {str(token_id) for token_id in token_ids if token_id}
@@ -227,21 +226,18 @@ def place_limit_order(
         return {"success": False, "error": "trading not configured (no private key)"}
 
     try:
-        from py_clob_client.clob_types import OrderType
+        from py_clob_client_v2 import OrderType
 
         tif = getattr(OrderType, order_type.upper(), OrderType.GTC)
-        order = _create_limit_order(
-            client,
+        order_args = _create_limit_order_args(
             token_id=token_id,
             side=side,
             price=price,
             size=size,
-            post_only=post_only and order_type.upper() == "GTC",
         )
-        return _post_order_with_retries(
-            client,
-            order,
-            tif,
+        submit_post_only = post_only and order_type.upper() == "GTC"
+        return _submit_order_with_retries(
+            lambda: client.create_and_post_order(order_args, order_type=tif, post_only=submit_post_only),
             label="maker" if post_only and order_type.upper() == "GTC" else "limit",
             context=f"token_id={token_id} side={side} price={price} size={size}",
         )
@@ -256,25 +252,21 @@ def place_taker_order(token_id: str, side: str, size: float, order_type: str = "
         return {"success": False, "error": "trading not configured (no private key)"}
 
     try:
-        from py_clob_client.clob_types import OrderType
+        from py_clob_client_v2 import OrderType
 
         book = fetch_book(token_id)
         price = _marketable_limit_price(book, side=side, size=size)
         if price is None:
             return {"success": False, "error": "no resting liquidity available"}
         tif = getattr(OrderType, order_type.upper(), OrderType.FAK)
-        order = _create_limit_order(
-            client,
+        order_args = _create_limit_order_args(
             token_id=token_id,
             side=side,
             price=price,
             size=size,
-            post_only=False,
         )
-        result = _post_order_with_retries(
-            client,
-            order,
-            tif,
+        result = _submit_order_with_retries(
+            lambda: client.create_and_post_order(order_args, order_type=tif, post_only=False),
             label="taker",
             context=f"token_id={token_id} side={side} size={size} marketable_price={price}",
         )
@@ -292,7 +284,9 @@ def cancel_order(order_id: str) -> dict:
     if not client:
         return {"success": False, "error": "trading not configured"}
     try:
-        resp = client.cancel(order_id=order_id)
+        from py_clob_client_v2 import OrderPayload
+
+        resp = client.cancel_order(OrderPayload(orderID=order_id))
         return {"success": True, "result": resp}
     except Exception as exc:
         logger.exception("cancel_order failed: %s", exc)

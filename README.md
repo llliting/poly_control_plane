@@ -88,3 +88,29 @@ Implementation notes:
 
 - realized PnL and curves are still based on the local `trades` table
 - current wallet value / positions / activity are fetched from Polymarket Data API
+
+## Polymarket CLOB V2 trading
+
+Trading uses Polymarket's CLOB V2 SDK (`py-clob-client-v2`) against `https://clob.polymarket.com`.
+
+Set in `.env`:
+
+```bash
+POLYMARKET_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
+POLYMARKET_CHAIN_ID=137
+POLYMARKET_SIGNATURE_TYPE=2
+POLYMARKET_FUNDER=0xYOUR_FUNDER_OR_PROXY_WALLET
+
+# Optional: reuse existing L2 API credentials instead of deriving them on startup.
+CLOB_API_KEY=...
+CLOB_SECRET=...
+CLOB_PASS_PHRASE=...
+
+# Optional: V2 builder attribution code from the Builder Profile.
+POLY_BUILDER_CODE=0x...
+```
+
+Notes:
+
+- CLOB V2 requires pUSD collateral. API-only wallets need to wrap USDC.e to pUSD before trading.
+- Legacy `POLY_BUILDER_*` HMAC headers are not used for order attribution in V2; use `POLY_BUILDER_CODE`.

@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     polymarket_chain_id: int = 137
     polymarket_funder: str | None = None
     polymarket_signature_type: int = 2
+    poly_builder_code: str | None = None
+    clob_api_key: str | None = None
+    clob_secret: str | None = None
+    clob_pass_phrase: str | None = None
     polymarket_trade_retry_attempts: int = 3
     polymarket_trade_retry_sleep_ms: int = 250
 

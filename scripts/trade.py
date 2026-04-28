@@ -297,19 +297,34 @@ def get_clob_client():
     funder = os.environ.get("POLYMARKET_FUNDER", "").strip() or None
 
     try:
-        from py_clob_client.client import ClobClient
+        from py_clob_client_v2 import ApiCreds, BuilderConfig, ClobClient
     except ImportError:
-        sys.exit("py_clob_client not installed. Run: pip install py-clob-client")
+        sys.exit("py_clob_client_v2 not installed. Run: pip install py-clob-client-v2")
 
+    builder_code = os.environ.get("POLY_BUILDER_CODE", "").strip()
+    builder_config = BuilderConfig(builder_code=builder_code) if builder_code else None
+    creds = None
+    if (
+        os.environ.get("CLOB_API_KEY")
+        and os.environ.get("CLOB_SECRET")
+        and os.environ.get("CLOB_PASS_PHRASE")
+    ):
+        creds = ApiCreds(
+            api_key=os.environ["CLOB_API_KEY"],
+            api_secret=os.environ["CLOB_SECRET"],
+            api_passphrase=os.environ["CLOB_PASS_PHRASE"],
+        )
     client = ClobClient(
         host=CLOB_HOST,
         chain_id=chain_id,
         key=pk,
+        creds=creds,
         signature_type=sig_type,
         funder=funder,
+        builder_config=builder_config,
     )
-    creds = client.create_or_derive_api_creds()
-    client.set_api_creds(creds)
+    if creds is None:
+        client.set_api_creds(client.create_or_derive_api_key())
     _clob_client = client
     return client
 
@@ -345,20 +360,20 @@ def cmd_order(args):
 
     client = get_clob_client()
 
-    from py_clob_client.clob_types import OrderArgs, OrderType
-    from py_clob_client.order_builder.constants import BUY, SELL
+    from py_clob_client_v2 import OrderArgs, OrderType, Side
 
-    clob_side = BUY if side == "BUY" else SELL
+    clob_side = Side.BUY if side == "BUY" else Side.SELL
     order_type = OrderType.GTC
 
-    order = client.create_order(OrderArgs(
-        token_id=token["token_id"],
-        price=price,
-        size=size,
-        side=clob_side,
-    ))
-
-    resp = client.post_order(order, order_type)
+    resp = client.create_and_post_order(
+        order_args=OrderArgs(
+            token_id=token["token_id"],
+            price=price,
+            size=size,
+            side=clob_side,
+        ),
+        order_type=order_type,
+    )
     print(f"\n  Response: {json.dumps(resp, indent=2, default=str)}")
 
     if isinstance(resp, dict):
@@ -382,10 +397,10 @@ def cmd_orders(args):
     print(f"  slug: {market['slug']}")
 
     try:
-        from py_clob_client.clob_types import OpenOrderParams
-        resp = client.get_orders(OpenOrderParams())
+        from py_clob_client_v2 import OpenOrderParams
+        resp = client.get_open_orders(OpenOrderParams())
     except Exception:
-        resp = client.get_orders()
+        resp = client.get_open_orders()
 
     orders = []
     if isinstance(resp, list):
@@ -426,7 +441,9 @@ def cmd_cancel(args):
             print("  Aborted.")
             return
 
-    resp = client.cancel(order_id=order_id)
+    from py_clob_client_v2 import OrderPayload
+
+    resp = client.cancel_order(OrderPayload(orderID=order_id))
     print(f"  Result: {json.dumps(resp, indent=2, default=str)}")
 
 
